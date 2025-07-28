@@ -22,11 +22,12 @@ ERC20_ABI = [
     {"constant": True, "inputs": [], "name": "UNDERLYING_ASSET_ADDRESS", "outputs": [{"name": "", "type": "address"}], "type": "function"}
 ]
 
-# Les 3 contrats à vérifier
+# Les 4 contrats à vérifier
 CONTRACTS = [
     "0x90DA57E0A6C0d166Bf15764E03b83745Dc90025B",
     "0x38e59ADE183BbEb94583d44213c8f3297e9933e9",
-    "0x067ae75628177FD257c2B1e500993e1a0baBcBd1"  # Aave Base GHO (aBasGHO)
+    "0x067ae75628177FD257c2B1e500993e1a0baBcBd1",  # Aave Base GHO (aBasGHO)
+    "0x59dca05b6c26dbd64b5381374aAaC5CD05644C28"   # Variable Debt USDC
 ]
 
 # EURC address sur Base
