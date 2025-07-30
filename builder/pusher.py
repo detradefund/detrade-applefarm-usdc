@@ -7,10 +7,11 @@ from pymongo import MongoClient
 from typing import Dict, Any
 import logging
 import os
-from builder.aggregator import BalanceAggregator, build_overview
-
 # Add parent directory to Python path
 sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent))
+
+from aggregator import BalanceAggregator, build_overview
 
 # Add parent directory to PYTHONPATH and load environment variables
 root_path = str(Path(__file__).parent.parent)
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 logger.info(f"Looking for .env file at: {env_path}")
 logger.info(f".env file exists: {env_path.exists()}")
 logger.info(f"MONGO_URI exists: {bool(os.getenv('MONGO_URI'))}")
-logger.info(f"DATABASE_NAME exists: {bool(os.getenv('DATABASE_NAME'))}")
+logger.info(f"DATABASE_NAME_1 exists: {bool(os.getenv('DATABASE_NAME_1'))}")
 logger.info(f"COLLECTION_NAME exists: {bool(os.getenv('COLLECTION_NAME'))}")
 logger.info(f"ADDRESSES exists: {bool(os.getenv('ADDRESSES'))}")
 
@@ -41,7 +42,7 @@ class BalancePusher:
     def __init__(self, database_name=None, collection_name=None):
         # Required MongoDB configuration from environment variables
         self.mongo_uri = os.getenv('MONGO_URI')
-        self.database_name = database_name or os.getenv('DATABASE_NAME')
+        self.database_name = database_name or os.getenv('DATABASE_NAME_1')
         self.collection_name = collection_name or os.getenv('COLLECTION_NAME')
         
         if not all([self.mongo_uri, self.database_name, self.collection_name]):
@@ -129,16 +130,52 @@ class BalancePusher:
             overview = build_overview(all_balances, address)
             logger.info("Overview built successfully")
 
-            # 3. Prepare data for storage
-            logger.info("3. Preparing data for storage...")
+            # 3. Calculate share price
+            logger.info("3. Calculating share price...")
+            try:
+                total_supply_wei = self.aggregator.supply_reader.get_total_supply()
+                total_supply_formatted = self.aggregator.supply_reader.format_total_supply()
+                
+                # Calculate share price: NAV / Total Supply
+                from decimal import Decimal
+                nav_usdc_wei = Decimal(overview["nav"]["usdc_wei"])
+                supply_wei = Decimal(total_supply_wei)
+                
+                if supply_wei > 0:
+                    # Share price in USDC (with 18 decimals precision)
+                    share_price_wei = nav_usdc_wei * Decimal(10**18) / supply_wei
+                    share_price_formatted = share_price_wei / Decimal(10**6)  # Convert back to USDC (6 decimals)
+                else:
+                    share_price_formatted = Decimal(0)
+                
+                logger.info(f"Total Supply: {total_supply_formatted} dtUSDC")
+                logger.info(f"NAV: {overview['nav']['usdc']} USDC")
+                logger.info(f"Share Price: {share_price_formatted:.6f} USDC per dtUSDC")
+                
+            except Exception as e:
+                logger.error(f"Error calculating share price: {str(e)}")
+                total_supply_wei = "0"
+                share_price_formatted = Decimal(0)
+
+            # 4. Prepare data for storage
+            logger.info("4. Preparing data for storage...")
             push_timestamp = datetime.now(timezone.utc)
+            
+            # Update nav with share price information
+            enhanced_nav = {
+                "usdc_wei": overview["nav"]["usdc_wei"],
+                "usdc": overview["nav"]["usdc"],
+                "share_price": f"{share_price_formatted:.6f}",
+                "total_supply": total_supply_wei
+            }
             
             # Combine overview with the rest of the data
             prepared_data = {
                 'timestamp': collection_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 'created_at': push_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
                 'address': address,
-                **overview,  # Add overview at the top
+                'nav': enhanced_nav,
+                'positions': overview['positions'],
                 'protocols': all_balances['protocols']
             }
             
@@ -147,8 +184,8 @@ class BalancePusher:
             
             logger.info("Data prepared successfully")
 
-            # 4. Store data in MongoDB
-            logger.info("4. Storing data in MongoDB...")
+            # 5. Store data in MongoDB
+            logger.info("5. Storing data in MongoDB...")
             result = self.collection.insert_one(prepared_data)
             
             if not result.inserted_id:
@@ -156,20 +193,22 @@ class BalancePusher:
             
             logger.info(f"Document inserted with ID: {result.inserted_id}")
 
-            # 5. Verify insertion
-            logger.info("5. Verifying document insertion...")
+            # 6. Verify insertion
+            logger.info("6. Verifying document insertion...")
             if self._verify_insertion(result.inserted_id):
                 logger.info("Document verified in database")
             else:
                 raise Exception("Document verification failed")
 
-            # 6. Print summary avec la durée de collection
+            # 7. Print summary avec la durée de collection
             collection_duration = (push_timestamp - collection_timestamp).total_seconds()
             logger.info("="*80)
             logger.info("SUMMARY")
             logger.info("="*80)
             logger.info(f"Address: {address}")
-            logger.info(f"Total Value: {overview['nav']['eurc']} EURC")
+            logger.info(f"Total Value: {enhanced_nav['usdc']} USDC")
+            logger.info(f"Share Price: {enhanced_nav['share_price']} USDC per dtUSDC")
+            logger.info(f"Total Supply: {enhanced_nav['total_supply']} wei")
             logger.info(f"Collection started at: {prepared_data['timestamp']}")
             logger.info(f"Pushed at: {push_timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}")
             logger.info(f"Collection duration: {collection_duration:.2f} seconds")
@@ -192,12 +231,12 @@ class BalancePusher:
 
 def main():
     """CLI entry point for testing balance pushing functionality."""
-    # Configuration for EURC
+    # Configuration for USDC - uses .env variables
     configurations = [
         {
-            'address': os.getenv('PRODUCTION_ADDRESS', '0xd201B0947AE7b057B0751e227B07D37b1a771570'),
-            'database_name': 'detrade-core-eurc',
-            'collection_name': 'oracle'
+            'address': os.getenv('PRODUCTION_ADDRESS', '0xA6548c1F8D3F3c97f75deE8D030B942b6c88B6ce'),
+            'database_name': os.getenv('DATABASE_NAME_1', 'detrade-core-usdc'),
+            'collection_name': os.getenv('COLLECTION_NAME', 'oracle')
         }
     ]
     

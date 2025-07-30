@@ -1,4 +1,4 @@
-name: Push NAV for DeTrade Core EURC
+name: Push NAV for DeTrade AppleFarm USDC
 
 on:
   push:
@@ -14,6 +14,7 @@ jobs:
     env:
       ETHEREUM_RPC: ${{ secrets.ETHEREUM_RPC }}
       BASE_RPC: ${{ secrets.BASE_RPC }}
+      ETHERLINK_RPC: ${{ secrets.ETHERLINK_RPC }}
     
     steps:
     - uses: actions/checkout@v3
@@ -40,14 +41,15 @@ jobs:
         echo "Checking environment variables:"
         echo "ETHEREUM_RPC exists: ${{ env.ETHEREUM_RPC != '' }}"
         echo "BASE_RPC exists: ${{ env.BASE_RPC != '' }}"
+        echo "ETHERLINK_RPC exists: ${{ env.ETHERLINK_RPC != '' }}"
         echo "MONGO_URI exists: ${{ secrets.MONGO_URI != '' }}"
-        echo "DATABASE_NAME exists: ${{ secrets.DATABASE_NAME != '' }}"
+        echo "DATABASE_NAME_1 exists: ${{ secrets.DATABASE_NAME_1 != '' }}"
         echo "COLLECTION_NAME exists: ${{ secrets.COLLECTION_NAME != '' }}"
         
     - name: Run pusher
       env:
         MONGO_URI: ${{ secrets.MONGO_URI }}
-        DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
+        DATABASE_NAME_1: ${{ secrets.DATABASE_NAME_1 }}
         COLLECTION_NAME: ${{ secrets.COLLECTION_NAME }}
         PRODUCTION_ADDRESS: ${{ secrets.PRODUCTION_ADDRESS }}
       run: |

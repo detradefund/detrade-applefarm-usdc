@@ -13,40 +13,28 @@ root_path = str(Path(__file__).parent.parent)
 sys.path.append(root_path)
 sys.path.append(str(Path(__file__).parent.parent))
 
-from aave.check_contracts import get_aave_balances, ERC20_ABI, RPC_URLS
-from vault.vault_reader import VaultReader
-from config.networks import NETWORK_TOKENS, COMMON_TOKENS
-from cowswap.cow_client import get_quote
+from superlend.check_balance import get_superlend_balances
+from shares.supply_reader import SupplyReader
 
 class BalanceAggregator:
     """
     Master aggregator that combines balances from multiple protocols.
     Currently supports:
-    - Aave (Base)
-    - DeTrade Core USDC Vault (Base)
+    - Superlend (Etherlink) - slUSDC monitoring
     """
     
     def __init__(self):
-        self.vault_reader = VaultReader()
-        
-        # Hardcoded refund configuration
-        self.MERKLE_REFUND_ENABLED = False  # Set to True to enable merkle refund calculation
-        self.MERKLE_REFUND = {
-            "address": "0x067ae75628177FD257c2B1e500993e1a0baBcBd1",
-            "token": "aBasGHO",
-            "amount": "0.447",  # Amount in token units
-            "network": "base"
-        }
+        self.supply_reader = SupplyReader()
         
     def get_all_balances(self, address: str) -> Dict[str, Any]:
         """
-        Fetches and combines balances from all supported protocols
+        Fetches balances from Superlend protocol on Etherlink
         """
         # Get UTC timestamp before any on-chain requests
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         
         print("\n" + "="*80)
-        print("FETCHING PROTOCOL BALANCES")
+        print("FETCHING SUPERLEND BALANCES")
         print("="*80)
         
         # Convert address to checksum format
@@ -55,217 +43,113 @@ class BalanceAggregator:
         # Initialize result structure
         result = {
             "protocols": {
-                "aave": {},
-                "detrade-core-usdc": {}
-            },
-            "merkle_refund": {}
+                "superlend": {
+                    "etherlink": {}
+                }
+            }
         }
         
-        # Get Aave balances
+        # Get Superlend balances
         try:
             print("\n" + "="*80)
-            print("AAVE BALANCE CHECKER")
+            print("SUPERLEND BALANCE CHECKER (ETHERLINK)")
             print("="*80 + "\n")
-            aave_balances = get_aave_balances()
-            if aave_balances:
-                # Extract content directly to avoid double "aave" key
-                result["protocols"]["aave"] = {
-                    "positions": aave_balances["aave"],
-                    "net_position": aave_balances["net_position"]
-                }
-                print("✓ Aave positions fetched successfully")
+            superlend_balances = get_superlend_balances()
+            if superlend_balances:
+                # Organiser les positions par token
+                etherlink_positions = {}
+                for position in superlend_balances["superlend"]:
+                    token_symbol = position["symbol"]
+                    etherlink_positions[token_symbol] = {
+                        "staking_contract": position["contract"],
+                        "amount": position["raw_balance"],
+                        "decimals": position["decimals"],
+                        "formatted_balance": position["formatted_balance"],
+                        "value": {
+                            "USDC": {
+                                "amount": position["usdc_value"]["usdc_value"],
+                                "decimals": position["decimals"],
+                                "formatted": position["usdc_value"]["usdc_formatted"],
+                                "conversion_details": {
+                                    "source": position["usdc_value"]["conversion_source"],
+                                    "rate": position["usdc_value"]["conversion_rate"],
+                                    "note": "1 slUSDC = 1 USDC (underlying)"
+                                }
+                            }
+                        }
+                    }
                 
-                # Add detailed logging for Aave
-                if "aave" in aave_balances and aave_balances["aave"]:
-                    print("\nAave positions:")
-                    for position in aave_balances["aave"]:
-                        print(f"\n{position['symbol']}:")
-                        print(f"  Contract: {position['contract']}")
-                        print(f"  Raw balance: {position['raw_balance']}")
-                        print(f"  Underlying: {position['underlying_symbol']} ({position['underlying_asset']})")
-                        if position['eurc_conversion']:
-                            print(f"  EURC value: {position['eurc_conversion']['eurc_value']}")
-                            print(f"  Conversion rate: {position['eurc_conversion']['conversion_rate']}")
-                            print(f"  Source: {position['eurc_conversion']['conversion_source']}")
-                    
-                    if "net_position" in aave_balances:
-                        net_pos = aave_balances["net_position"]
-                        print(f"\nNet position:")
-                        print(f"  Total supply EURC: {net_pos['total_supply_eurc']}")
-                        print(f"  Total debt EURC: {net_pos['total_debt_eurc']}")
-                        print(f"  Net position EURC: {net_pos['net_position_eurc']}")
-        except Exception as e:
-            print(f"✗ Error fetching Aave positions: {str(e)}")
-            result["protocols"]["aave"] = {"positions": [], "net_position": {"total_supply_eurc": "0", "total_debt_eurc": "0", "net_position_eurc": "0"}}
-        
-        # Get Vault balances
-        try:
-            print("\n" + "="*80)
-            print("DETRADE CORE USDC VAULT")
-            print("="*80 + "\n")
-            vault_data = self.vault_reader.get_vault_data()
-            if vault_data:
-                result["protocols"]["detrade-core-usdc"] = vault_data["detrade-core-usdc"]
-                print("✓ Vault positions fetched successfully")
+                # Calculer les totaux pour Etherlink
+                etherlink_total_wei = sum(
+                    int(token_data["value"]["USDC"]["amount"]) 
+                    for token_data in etherlink_positions.values() 
+                    if token_data.get("value") and token_data["value"].get("USDC")
+                )
+                etherlink_total_formatted = str(Decimal(etherlink_total_wei) / Decimal(10**6))
                 
-                # Add detailed logging for Vault
-                vault_info = vault_data["detrade-core-usdc"]
-                print(f"\nVault data:")
-                print(f"  Shares: {vault_info['shares']}")
-                print(f"  Share price: {vault_info['share_price']}")
-                print(f"  USDC value: {vault_info['usdc_value']}")
-                print(f"  EURC value: {vault_info['eurc_value']}")
-                print(f"  Conversion rate: {vault_info['conversion_rate']}")
-                print(f"  Source: {vault_info['conversion_source']}")
-        except Exception as e:
-            print(f"✗ Error fetching Vault positions: {str(e)}")
-            result["protocols"]["detrade-core-usdc"] = {"shares": "0", "share_price": "0", "usdc_value": "0", "eurc_value": "0"}
-        
-        # Get Merkle refund (only if enabled)
-        if self.MERKLE_REFUND_ENABLED:
-            try:
-                print("\n" + "="*80)
-                print("MERKLE REFUND CALCULATION")
-                print("="*80 + "\n")
-                merkle_refund_data = self.get_merkle_refund_eurc_value()
-                if merkle_refund_data:
-                    result["merkle_refund"] = merkle_refund_data["merkle_refund"]
-                    print("✓ Merkle refund calculated successfully")
-                    
-                    # Add detailed logging for Merkle refund
-                    refund_info = merkle_refund_data["merkle_refund"]
-                    print(f"\nMerkle refund data:")
-                    print(f"  Address: {refund_info['address']}")
-                    print(f"  Token: {refund_info['token']}")
-                    print(f"  Amount: {refund_info['amount']} {refund_info['token']}")
-                    print(f"  EURC value: {refund_info['eurc_value']}")
-                    print(f"  Conversion rate: {refund_info['conversion_rate']}")
-                    print(f"  Source: {refund_info['conversion_source']}")
-                    if 'error' in refund_info:
-                        print(f"  Error: {refund_info['error']}")
-            except Exception as e:
-                print(f"✗ Error calculating Merkle refund: {str(e)}")
-                result["merkle_refund"] = {
-                    "address": self.MERKLE_REFUND["address"],
-                    "token": self.MERKLE_REFUND["token"],
-                    "amount": self.MERKLE_REFUND["amount"],
-                    "amount_wei": "0",
-                    "eurc_value": "0",
-                    "conversion_rate": "0",
-                    "conversion_source": "Error",
-                    "price_impact": "N/A",
-                    "fallback_used": True,
-                    "error": str(e)
+                # Ajouter les totaux
+                if etherlink_positions:
+                    etherlink_positions["totals"] = {
+                        "wei": etherlink_total_wei,
+                        "formatted": etherlink_total_formatted
+                    }
+                
+                result["protocols"]["superlend"]["etherlink"] = etherlink_positions
+                
+                # Ajouter les totaux pour le protocole Superlend
+                result["protocols"]["superlend"]["totals"] = {
+                    "wei": etherlink_total_wei,
+                    "formatted": etherlink_total_formatted
                 }
-        else:
-            print("\n" + "="*80)
-            print("MERKLE REFUND CALCULATION")
-            print("="*80 + "\n")
-            print("⚠️  Merkle refund calculation is disabled (already claimed)")
-            print("   Set MERKLE_REFUND_ENABLED = True to re-enable")
-            result["merkle_refund"] = {
-                "enabled": False,
-                "reason": "Already claimed - rewards have been distributed"
+                
+                print("✓ Superlend positions fetched successfully")
+                
+                # Add detailed logging for Superlend
+                if etherlink_positions:
+                    print("\nSuperlend Etherlink positions:")
+                    for token_symbol, token_data in etherlink_positions.items():
+                        # Exclure les totaux du logging des positions
+                        if token_symbol == "totals":
+                            print(f"\nEtherlink totals:")
+                            print(f"  Total USDC value: {token_data['formatted']}")
+                            print(f"  Total USDC value (wei): {token_data['wei']}")
+                            continue
+                        print(f"\n{token_symbol}:")
+                        print(f"  Contract: {token_data['staking_contract']}")
+                        print(f"  Raw balance: {token_data['amount']}")
+                        print(f"  Formatted balance: {token_data['formatted_balance']}")
+                        if token_data.get('value') and token_data['value'].get('USDC'):
+                            usdc_data = token_data['value']['USDC']
+                            print(f"  USDC value: {usdc_data['formatted']}")
+                            print(f"  USDC value (wei): {usdc_data['amount']}")
+                            print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
+                            print(f"  Source: {usdc_data['conversion_details']['source']}")
+        except Exception as e:
+            print(f"✗ Error fetching Superlend positions: {str(e)}")
+            result["protocols"]["superlend"]["etherlink"] = {}
+            result["protocols"]["superlend"]["totals"] = {
+                "wei": 0,
+                "formatted": "0.0"
             }
         
         return result
-        
-    def get_merkle_refund_eurc_value(self) -> dict:
-        """
-        Calculate EURC value for the hardcoded Merkle refund (aBasGHO)
-        """
-        try:
-            # Setup web3
-            w3 = Web3(Web3.HTTPProvider(RPC_URLS[ self.MERKLE_REFUND["network"] ]))
-            abasgho_address = NETWORK_TOKENS[self.MERKLE_REFUND["network"]][self.MERKLE_REFUND["token"]]["address"]
-            abasgho_decimals = NETWORK_TOKENS[self.MERKLE_REFUND["network"]][self.MERKLE_REFUND["token"]]["decimals"]
-            abasgho_contract = w3.eth.contract(address=abasgho_address, abi=ERC20_ABI)
-            # Get underlying asset address (GHO)
-            underlying_address = abasgho_contract.functions.UNDERLYING_ASSET_ADDRESS().call()
-            # Get decimals of underlying (GHO)
-            underlying_contract = w3.eth.contract(address=underlying_address, abi=ERC20_ABI)
-            underlying_decimals = underlying_contract.functions.decimals().call()
-            # Convert amount to wei (GHO)
-            amount_wei = str(int(Decimal(self.MERKLE_REFUND["amount"]) * Decimal(10**underlying_decimals)))
-            # Get EURC quote via CoWSwap
-            quote_result = get_quote(
-                network=self.MERKLE_REFUND["network"],
-                sell_token=underlying_address,
-                buy_token=COMMON_TOKENS[self.MERKLE_REFUND["network"]]["EURC"]["address"],
-                amount=amount_wei,
-                token_decimals=underlying_decimals,
-                token_symbol="GHO"
-            )
-            if quote_result["quote"] and 'quote' in quote_result["quote"]:
-                eurc_amount_wei = quote_result["quote"]["quote"]["buyAmount"]
-                return {
-                    "merkle_refund": {
-                        "address": self.MERKLE_REFUND["address"],
-                        "token": self.MERKLE_REFUND["token"],
-                        "amount": self.MERKLE_REFUND["amount"],
-                        "amount_wei": amount_wei,
-                        "eurc_value": eurc_amount_wei,
-                        "conversion_rate": quote_result["conversion_details"]["rate"],
-                        "conversion_source": quote_result["conversion_details"]["source"],
-                        "price_impact": quote_result["conversion_details"]["price_impact"],
-                        "fallback_used": quote_result["conversion_details"]["fallback"],
-                        "underlying_address": underlying_address
-                    }
-                }
-            else:
-                return {
-                    "merkle_refund": {
-                        "address": self.MERKLE_REFUND["address"],
-                        "token": self.MERKLE_REFUND["token"],
-                        "amount": self.MERKLE_REFUND["amount"],
-                        "amount_wei": amount_wei,
-                        "eurc_value": "0",
-                        "conversion_rate": "0",
-                        "conversion_source": "Failed",
-                        "price_impact": "N/A",
-                        "fallback_used": True,
-                        "error": "Failed to get quote",
-                        "underlying_address": underlying_address
-                    }
-                }
-        except Exception as e:
-            return {
-                "merkle_refund": {
-                    "address": self.MERKLE_REFUND["address"],
-                    "token": self.MERKLE_REFUND["token"],
-                    "amount": self.MERKLE_REFUND["amount"],
-                    "amount_wei": "0",
-                    "eurc_value": "0",
-                    "conversion_rate": "0",
-                    "conversion_source": "Error",
-                    "price_impact": "N/A",
-                    "fallback_used": True,
-                    "error": str(e)
-                }
-            }
+
 
 def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]:
-    """Build overview section with positions"""
+    """Build overview section with Superlend positions"""
     
     # Initialize positions dictionary
     positions = {}
     
-    # Process Aave net position only
-    if "protocols" in all_balances and "aave" in all_balances["protocols"] and "net_position" in all_balances["protocols"]["aave"]:
-        net_pos = all_balances["protocols"]["aave"]["net_position"]
-        positions["aave.net_position"] = net_pos["net_position_eurc"]
-    
-    # Process Vault position
-    if "protocols" in all_balances and "detrade-core-usdc" in all_balances["protocols"]:
-        vault_data = all_balances["protocols"]["detrade-core-usdc"]
-        positions["vault.detrade_core_usdc"] = vault_data["eurc_value"]
-    
-    # Process Merkle refund position (only if enabled and has value)
-    if ("merkle_refund" in all_balances and 
-        "eurc_value" in all_balances["merkle_refund"] and 
-        all_balances["merkle_refund"].get("enabled", True)):
-        refund_data = all_balances["merkle_refund"]
-        positions["merkle_refund.abasgho"] = refund_data["eurc_value"]
+    # Process Superlend positions
+    if "protocols" in all_balances and "superlend" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["superlend"]:
+        etherlink_positions = all_balances["protocols"]["superlend"]["etherlink"]
+        for token_symbol, token_data in etherlink_positions.items():
+            # Exclure les totaux des positions
+            if token_symbol == "totals":
+                continue
+            if token_data.get("value") and token_data["value"].get("USDC"):
+                positions[f"superlend.etherlink.{token_symbol}"] = token_data["value"]["USDC"]["amount"]
     
     # Sort positions by value in descending order
     sorted_positions = dict(sorted(
@@ -274,27 +158,29 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
         reverse=True
     ))
     
-    # Calculate total value from positions (all in EURC wei)
-    total_value_eurc_wei = sum(Decimal(value) for value in sorted_positions.values())
+    # Calculate total value from positions (all in USDC wei - 6 decimals)
+    total_value_usdc_wei = sum(Decimal(value) for value in sorted_positions.values())
     
-    # Convert to EURC with 6 decimals for display
-    total_value_eurc = total_value_eurc_wei / Decimal(10**6)
+    # Convert to USDC with 6 decimals for display
+    total_value_usdc = total_value_usdc_wei / Decimal(10**6)
     
     return {
         "nav": {
-            "eurc_wei": str(total_value_eurc_wei),
-            "eurc": f"{total_value_eurc:.6f}"
+            "usdc_wei": str(total_value_usdc_wei),
+            "usdc": f"{total_value_usdc:.6f}"
         },
         "positions": sorted_positions
     }
 
 def main():
     """
-    Main function to aggregate all balance data.
-    Uses command line argument if provided, otherwise uses default address.
+    Main function to aggregate Superlend balance data.
+    Uses command line argument if provided, otherwise uses production address from .env.
     """
-    # Default address
-    DEFAULT_ADDRESS = '0xd201B0947AE7b057B0751e227B07D37b1a771570'
+    # Get production address from environment
+    from dotenv import load_dotenv
+    load_dotenv()
+    DEFAULT_ADDRESS = os.getenv('PRODUCTION_ADDRESS', '0xA6548c1F8D3F3c97f75deE8D030B942b6c88B6ce')
     
     # Get address from command line argument if provided
     address = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ADDRESS
@@ -323,24 +209,64 @@ def main():
                 print(f"All {max_retries} attempts failed")
                 raise
     
-    # Build the final result with overview, protocols and vault sections
+    # Build the final result with overview and protocols sections
     overview = build_overview(all_balances, address)
+    
+    # Get total supply and calculate share price
+    try:
+        print("\n" + "="*80)
+        print("CALCULATING SHARE PRICE")
+        print("="*80 + "\n")
+        
+        total_supply_wei = aggregator.supply_reader.get_total_supply()
+        total_supply_formatted = aggregator.supply_reader.format_total_supply()
+        
+        # Calculate share price: NAV / Total Supply
+        nav_usdc_wei = Decimal(overview["nav"]["usdc_wei"])
+        supply_wei = Decimal(total_supply_wei)
+        
+        if supply_wei > 0:
+            # Share price in USDC (with 18 decimals precision)
+            share_price_wei = nav_usdc_wei * Decimal(10**18) / supply_wei
+            share_price_formatted = share_price_wei / Decimal(10**6)  # Convert back to USDC (6 decimals)
+        else:
+            share_price_wei = Decimal(0)
+            share_price_formatted = Decimal(0)
+        
+        print(f"Total Supply: {total_supply_formatted} dtUSDC")
+        print(f"NAV: {overview['nav']['usdc']} USDC")
+        print(f"Share Price: {share_price_formatted:.6f} USDC per dtUSDC")
+        
+    except Exception as e:
+        print(f"✗ Error calculating share price: {str(e)}")
+        total_supply_wei = "0"
+        total_supply_formatted = "0.0"
+        share_price_formatted = Decimal(0)
     
     # Format created_at to match timestamp format
     created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     
+    # Update nav with share price information
+    enhanced_nav = {
+        "usdc_wei": overview["nav"]["usdc_wei"],
+        "usdc": overview["nav"]["usdc"],
+        "share_price": f"{share_price_formatted:.6f}",
+        "total_supply": total_supply_wei
+    }
+    
     final_result = {
         "timestamp": timestamp,
         "created_at": created_at,
         "address": address,
-        **overview,  # Add overview (nav and positions)
+        "nav": enhanced_nav,
+        "positions": overview["positions"],
         "protocols": all_balances["protocols"]
     }
     
     # Display final result
     print("\n" + "="*80)
-    print("FINAL AGGREGATED RESULT")
+    print("FINAL SUPERLEND AGGREGATED RESULT")
     print("="*80 + "\n")
     print(json.dumps(final_result, indent=2))
     

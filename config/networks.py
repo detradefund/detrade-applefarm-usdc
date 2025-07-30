@@ -8,12 +8,14 @@ load_dotenv()
 RPC_URLS = {
     "ethereum": os.getenv('ETHEREUM_RPC'),
     "base": os.getenv('BASE_RPC'),
+    "etherlink": os.getenv('ETHERLINK_RPC'),
 }
 
 # Chain IDs for network identification
 CHAIN_IDS = {
     "ethereum": "1",
-    "base": "8453"
+    "base": "8453",
+    "etherlink": "42793"
 }
 
 # Complete network token configuration
