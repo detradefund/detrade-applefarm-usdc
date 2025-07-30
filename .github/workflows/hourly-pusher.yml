@@ -37,6 +37,10 @@ jobs:
         ls -la builder/
         
     - name: Debug - Check environment variables
+      env:
+        ETHEREUM_RPC: ${{ secrets.ETHEREUM_RPC }}
+        BASE_RPC: ${{ secrets.BASE_RPC }}
+        ETHERLINK_RPC: ${{ secrets.ETHERLINK_RPC }}
       run: |
         echo "Checking environment variables:"
         echo "ETHEREUM_RPC exists: ${{ env.ETHEREUM_RPC != '' }}"
@@ -45,6 +49,11 @@ jobs:
         echo "MONGO_URI exists: ${{ secrets.MONGO_URI != '' }}"
         echo "DATABASE_NAME_1 exists: ${{ secrets.DATABASE_NAME_1 != '' }}"
         echo "COLLECTION_NAME exists: ${{ secrets.COLLECTION_NAME != '' }}"
+        echo ""
+        echo "RPC Endpoints (masked):"
+        echo "ETHEREUM_RPC length: ${#ETHEREUM_RPC}"
+        echo "BASE_RPC length: ${#BASE_RPC}"
+        echo "ETHERLINK_RPC length: ${#ETHERLINK_RPC}"
         
     - name: Run pusher
       env:

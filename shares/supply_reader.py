@@ -54,9 +54,14 @@ class SupplyReader:
         
         # Initialize Web3 connection
         rpc_url = rpc_url or RPC_URLS['base']
+        logger.info(f"Using RPC URL: {rpc_url[:50]}..." if rpc_url and len(rpc_url) > 50 else f"Using RPC URL: {rpc_url}")
+        
+        if not rpc_url:
+            raise ConnectionError("No RPC URL provided - check BASE_RPC environment variable")
+            
         self.w3 = Web3(Web3.HTTPProvider(rpc_url))
         if not self.w3.is_connected():
-            raise ConnectionError("Failed to connect to RPC endpoint")
+            raise ConnectionError(f"Failed to connect to RPC endpoint: {rpc_url[:50]}..." if len(rpc_url) > 50 else rpc_url)
         
         # Setup contract
         self.abi = [{
