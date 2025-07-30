@@ -48,6 +48,9 @@ jobs:
         
     - name: Run pusher
       env:
+        ETHEREUM_RPC: ${{ secrets.ETHEREUM_RPC }}
+        BASE_RPC: ${{ secrets.BASE_RPC }}
+        ETHERLINK_RPC: ${{ secrets.ETHERLINK_RPC }}
         MONGO_URI: ${{ secrets.MONGO_URI }}
         DATABASE_NAME_1: ${{ secrets.DATABASE_NAME_1 }}
         COLLECTION_NAME: ${{ secrets.COLLECTION_NAME }}

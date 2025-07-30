@@ -44,7 +44,7 @@ class SupplyReader:
         logger.info("\n=== Supply Reader Initialization ===")
         
         # Use provided address or default to production address
-        self.user_address = address or '0x66DbceE7feA3287B3356227d6F3DfF3CeFbC6F3C'
+        self.user_address = address or '0xA6548c1F8D3F3c97f75deE8D030B942b6c88B6ce'
         logger.info(f"User Address: {self.user_address}")
         
         # Use contract configuration
