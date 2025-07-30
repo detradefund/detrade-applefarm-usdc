@@ -3,8 +3,18 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 # Load environment variables from .env - use consistent path resolution
+# In GitHub Actions, .env doesn't exist but environment variables are set directly
 env_path = Path(__file__).parent.parent / '.env'
-load_dotenv(env_path)
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    # In GitHub Actions or when .env doesn't exist, variables come from environment
+    load_dotenv()  # This will load from existing environment variables
+
+# Debug: Print which variables are available (for troubleshooting)
+print(f"DEBUG networks.py - ETHEREUM_RPC exists: {bool(os.getenv('ETHEREUM_RPC'))}")
+print(f"DEBUG networks.py - BASE_RPC exists: {bool(os.getenv('BASE_RPC'))}")  
+print(f"DEBUG networks.py - ETHERLINK_RPC exists: {bool(os.getenv('ETHERLINK_RPC'))}")
 
 # RPC endpoints for supported networks
 RPC_URLS = {
