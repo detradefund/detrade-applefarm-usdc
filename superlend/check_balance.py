@@ -4,13 +4,18 @@ import json
 from web3 import Web3
 from dotenv import load_dotenv
 from decimal import Decimal
+from pathlib import Path
 
 # Add parent directory to path to import config
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.networks import RPC_URLS, NETWORK_TOKENS
 
-# Load environment variables
-load_dotenv()
+# Load environment variables - fix for GitHub Actions
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv()  # GitHub Actions case
 
 # ERC20 ABI pour balanceOf et autres fonctions standard
 ERC20_ABI = [
@@ -25,13 +30,8 @@ SLUSDC_ADDRESS = "0xd03bfdF9B26DB1e6764724d914d7c3d18106a9Fb"
 
 # Plus besoin de conversion - slUSDC underlying est directement USDC
 
-# Récupérer l'adresse de production depuis .env
-PRODUCTION_ADDRESS = os.getenv('PRODUCTION_ADDRESS')
-
-if not PRODUCTION_ADDRESS:
-    print("PRODUCTION_ADDRESS non trouvé dans le fichier .env")
-    print("Ajoutez PRODUCTION_ADDRESS=votre_adresse dans le fichier .env")
-    sys.exit(1)
+# Récupérer l'adresse de production depuis .env (pour fallback seulement)
+PRODUCTION_ADDRESS = os.getenv('PRODUCTION_ADDRESS', '0xA6548c1F8D3F3c97f75deE8D030B942b6c88B6ce')
 
 def get_usdc_value(raw_balance, decimals):
     """Retourne la valeur USDC directement
@@ -73,8 +73,11 @@ def check_slusdc_balance(w3, wallet_address):
         print(f"Erreur lors de la vérification de slUSDC: {str(e)}")
         return None
 
-def get_superlend_balances():
+def get_superlend_balances(address=None):
     """Récupère la balance slUSDC et retourne un dictionnaire"""
+    # Use provided address or fallback to PRODUCTION_ADDRESS
+    target_address = address or PRODUCTION_ADDRESS
+    
     # Connect to Etherlink
     rpc_url = RPC_URLS.get("etherlink")
     if not rpc_url:
@@ -87,10 +90,10 @@ def get_superlend_balances():
         return {"superlend": []}
     
     print(f"Connecté à Etherlink via {rpc_url}")
-    print(f"Vérification de la balance slUSDC pour l'adresse: {PRODUCTION_ADDRESS}")
+    print(f"Vérification de la balance slUSDC pour l'adresse: {target_address}")
     
     # Vérifier la balance slUSDC
-    result = check_slusdc_balance(w3, PRODUCTION_ADDRESS)
+    result = check_slusdc_balance(w3, target_address)
     
     superlend_data = []
     if result and int(result["raw_balance"]) > 0:

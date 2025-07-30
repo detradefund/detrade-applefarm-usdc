@@ -11,11 +11,6 @@ else:
     # In GitHub Actions or when .env doesn't exist, variables come from environment
     load_dotenv()  # This will load from existing environment variables
 
-# Debug: Print which variables are available (for troubleshooting)
-print(f"DEBUG networks.py - ETHEREUM_RPC exists: {bool(os.getenv('ETHEREUM_RPC'))}")
-print(f"DEBUG networks.py - BASE_RPC exists: {bool(os.getenv('BASE_RPC'))}")  
-print(f"DEBUG networks.py - ETHERLINK_RPC exists: {bool(os.getenv('ETHERLINK_RPC'))}")
-
 # RPC endpoints for supported networks
 RPC_URLS = {
     "ethereum": os.getenv('ETHEREUM_RPC'),

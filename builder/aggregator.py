@@ -54,7 +54,7 @@ class BalanceAggregator:
             print("\n" + "="*80)
             print("SUPERLEND BALANCE CHECKER (ETHERLINK)")
             print("="*80 + "\n")
-            superlend_balances = get_superlend_balances()
+            superlend_balances = get_superlend_balances(checksum_address)
             if superlend_balances:
                 # Organiser les positions par token
                 etherlink_positions = {}
