@@ -15,26 +15,29 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from superlend.check_balance import get_superlend_balances
 from shares.supply_reader import SupplyReader
+from spot.balance_manager import SpotBalanceManager
 
 class BalanceAggregator:
     """
     Master aggregator that combines balances from multiple protocols.
     Currently supports:
     - Superlend (Etherlink) - slUSDC monitoring
+    - Spot Tokens (Etherlink) - Apple XTZ monitoring
     """
     
     def __init__(self):
         self.supply_reader = SupplyReader()
+        self.spot_manager = SpotBalanceManager()
         
     def get_all_balances(self, address: str) -> Dict[str, Any]:
         """
-        Fetches balances from Superlend protocol on Etherlink
+        Fetches balances from Superlend protocol and Spot tokens on Etherlink
         """
         # Get UTC timestamp before any on-chain requests
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         
         print("\n" + "="*80)
-        print("FETCHING SUPERLEND BALANCES")
+        print("FETCHING ALL BALANCES (SUPERLEND + SPOT)")
         print("="*80)
         
         # Convert address to checksum format
@@ -44,6 +47,9 @@ class BalanceAggregator:
         result = {
             "protocols": {
                 "superlend": {
+                    "etherlink": {}
+                },
+                "spot": {
                     "etherlink": {}
                 }
             }
@@ -55,7 +61,7 @@ class BalanceAggregator:
             print("SUPERLEND BALANCE CHECKER (ETHERLINK)")
             print("="*80 + "\n")
             superlend_balances = get_superlend_balances(checksum_address)
-            if superlend_balances:
+            if superlend_balances and superlend_balances["superlend"]:
                 # Organiser les positions par token
                 etherlink_positions = {}
                 for position in superlend_balances["superlend"]:
@@ -65,6 +71,7 @@ class BalanceAggregator:
                         "amount": position["raw_balance"],
                         "decimals": position["decimals"],
                         "formatted_balance": position["formatted_balance"],
+                        "position_type": position.get("position_type", "positive"),  # Nouveau champ
                         "value": {
                             "USDC": {
                                 "amount": position["usdc_value"]["usdc_value"],
@@ -73,18 +80,48 @@ class BalanceAggregator:
                                 "conversion_details": {
                                     "source": position["usdc_value"]["conversion_source"],
                                     "rate": position["usdc_value"]["conversion_rate"],
-                                    "note": "1 slUSDC = 1 USDC (underlying)"
+                                    "note": f"1 {token_symbol} conversion to USDC"
                                 }
                             }
                         }
                     }
                 
-                # Calculer les totaux pour Etherlink
-                etherlink_total_wei = sum(
-                    int(token_data["value"]["USDC"]["amount"]) 
-                    for token_data in etherlink_positions.values() 
-                    if token_data.get("value") and token_data["value"].get("USDC")
-                )
+                # Ajouter la position nette WXTZ si elle existe
+                if superlend_balances.get("wxtz_net_position") and superlend_balances["wxtz_net_position"]["usdc_value"]:
+                    wxtz_net = superlend_balances["wxtz_net_position"]
+                    etherlink_positions["WXTZ_NET"] = {
+                        "staking_contract": "Net position calculation",
+                        "amount": wxtz_net["wxtz_net_wei"],
+                        "decimals": 18,
+                        "formatted_balance": wxtz_net["wxtz_net_formatted"],
+                        "position_type": "net",
+                        "value": {
+                            "USDC": {
+                                "amount": str(wxtz_net["usdc_value"]["usdc_value"]),
+                                "decimals": 6,
+                                "formatted": wxtz_net["usdc_value"]["usdc_formatted"],
+                                "conversion_details": {
+                                    "source": wxtz_net["usdc_value"]["conversion_source"],
+                                    "rate": wxtz_net["usdc_value"]["conversion_rate"],
+                                    "note": f"Net WXTZ position: {wxtz_net['positions']['slWXTZ']} - {wxtz_net['positions']['variableDebtWXTZ']} wei"
+                                }
+                            }
+                        }
+                    }
+                
+                # Calculer les totaux pour Etherlink (valeur nette réelle)
+                # On ne compte que slUSDC et la position nette WXTZ, pas les composants individuels
+                etherlink_total_wei = 0
+                
+                for token_symbol, token_data in etherlink_positions.items():
+                    if token_symbol in ["totals"]:
+                        continue
+                    
+                    # Ne compter que slUSDC et WXTZ_NET pour le total (pas slWXTZ ni variableDebtWXTZ individuellement)
+                    if token_symbol in ["slUSDC", "WXTZ_NET"]:
+                        if token_data.get("value") and token_data["value"].get("USDC"):
+                            etherlink_total_wei += int(token_data["value"]["USDC"]["amount"])
+                
                 etherlink_total_formatted = str(Decimal(etherlink_total_wei) / Decimal(10**6))
                 
                 # Ajouter les totaux
@@ -118,12 +155,20 @@ class BalanceAggregator:
                         print(f"  Contract: {token_data['staking_contract']}")
                         print(f"  Raw balance: {token_data['amount']}")
                         print(f"  Formatted balance: {token_data['formatted_balance']}")
+                        print(f"  Position type: {token_data.get('position_type', 'positive')}")
                         if token_data.get('value') and token_data['value'].get('USDC'):
                             usdc_data = token_data['value']['USDC']
                             print(f"  USDC value: {usdc_data['formatted']}")
                             print(f"  USDC value (wei): {usdc_data['amount']}")
                             print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
                             print(f"  Source: {usdc_data['conversion_details']['source']}")
+            else:
+                print("No Superlend balances found")
+                result["protocols"]["superlend"]["etherlink"] = {}
+                result["protocols"]["superlend"]["totals"] = {
+                    "wei": 0,
+                    "formatted": "0.0"
+                }
         except Exception as e:
             print(f"✗ Error fetching Superlend positions: {str(e)}")
             result["protocols"]["superlend"]["etherlink"] = {}
@@ -132,11 +177,98 @@ class BalanceAggregator:
                 "formatted": "0.0"
             }
         
+        # Get Spot balances (Apple XTZ)
+        try:
+            print("\n" + "="*80)
+            print("SPOT BALANCE CHECKER (ETHERLINK)")
+            print("="*80 + "\n")
+            spot_balances = self.spot_manager.get_balances(checksum_address)
+            
+            if spot_balances and "etherlink" in spot_balances:
+                etherlink_spot = spot_balances["etherlink"]
+                # Convertir les balances spot pour correspondre au format attendu
+                spot_positions = {}
+                
+                for token_symbol, token_data in etherlink_spot.items():
+                    if token_symbol == "totals":
+                        continue
+                    
+                    # Le spot balance manager fournit déjà les valeurs en USDC
+                    if token_data.get("value") and token_data["value"].get("USDC"):
+                        usdc_data = token_data["value"]["USDC"]
+                        
+                        spot_positions[token_symbol] = {
+                            "amount": token_data["amount"],
+                            "decimals": token_data["decimals"],
+                            "formatted_balance": f"{Decimal(token_data['amount']) / Decimal(10**token_data['decimals']):.6f}",
+                            "value": {
+                                "WXTZ": token_data["value"]["WXTZ"],
+                                "USDC": usdc_data
+                            }
+                        }
+                
+                # Calculer les totaux spot
+                spot_total_wei = sum(
+                    int(token_data["value"]["USDC"]["amount"]) 
+                    for token_data in spot_positions.values() 
+                    if token_data.get("value") and token_data["value"].get("USDC")
+                )
+                spot_total_formatted = str(Decimal(spot_total_wei) / Decimal(10**6))
+                
+                # Ajouter les totaux
+                if spot_positions:
+                    spot_positions["totals"] = {
+                        "wei": spot_total_wei,
+                        "formatted": spot_total_formatted
+                    }
+                
+                result["protocols"]["spot"]["etherlink"] = spot_positions
+                result["protocols"]["spot"]["totals"] = {
+                    "wei": spot_total_wei,
+                    "formatted": spot_total_formatted
+                }
+                
+                print("✓ Spot positions fetched successfully")
+                
+                # Add detailed logging for Spot
+                if spot_positions:
+                    print("\nSpot Etherlink positions:")
+                    for token_symbol, token_data in spot_positions.items():
+                        if token_symbol == "totals":
+                            print(f"\nSpot totals:")
+                            print(f"  Total USDC value: {token_data['formatted']}")
+                            print(f"  Total USDC value (wei): {token_data['wei']}")
+                            continue
+                        print(f"\n{token_symbol}:")
+                        print(f"  Raw balance: {token_data['amount']}")
+                        print(f"  Formatted balance: {token_data['formatted_balance']}")
+                        if token_data.get('value') and token_data['value'].get('USDC'):
+                            usdc_data = token_data['value']['USDC']
+                            print(f"  USDC value: {usdc_data['formatted']}")
+                            print(f"  USDC value (wei): {usdc_data['amount']}")
+                            print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
+                            print(f"  Source: {usdc_data['conversion_details']['source']}")
+            else:
+                print("No spot balances found")
+                result["protocols"]["spot"]["etherlink"] = {}
+                result["protocols"]["spot"]["totals"] = {
+                    "wei": 0,
+                    "formatted": "0.0"
+                }
+                
+        except Exception as e:
+            print(f"✗ Error fetching Spot positions: {str(e)}")
+            result["protocols"]["spot"]["etherlink"] = {}
+            result["protocols"]["spot"]["totals"] = {
+                "wei": 0,
+                "formatted": "0.0"
+            }
+        
         return result
 
 
 def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]:
-    """Build overview section with Superlend positions"""
+    """Build overview section with Superlend and Spot positions"""
     
     # Initialize positions dictionary
     positions = {}
@@ -144,22 +276,46 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
     # Process Superlend positions
     if "protocols" in all_balances and "superlend" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["superlend"]:
         etherlink_positions = all_balances["protocols"]["superlend"]["etherlink"]
+        superlend_total_usdc = 0
+        
         for token_symbol, token_data in etherlink_positions.items():
             # Exclure les totaux des positions
             if token_symbol == "totals":
                 continue
+            
+            # Calculer le total net Superlend (slUSDC + WXTZ_NET)
+            if token_symbol in ["slUSDC", "WXTZ_NET"]:
+                if token_data.get("value") and token_data["value"].get("USDC"):
+                    superlend_total_usdc += int(token_data["value"]["USDC"]["amount"])
+        
+        # Ajouter une seule position pour tout Superlend
+        if superlend_total_usdc != 0:
+            # Formater en USDC décimal
+            superlend_formatted = f"{Decimal(superlend_total_usdc) / Decimal(10**6):.6f}"
+            positions["superlend.etherlink.total"] = superlend_formatted
+    
+    # Process Spot positions
+    if "protocols" in all_balances and "spot" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["spot"]:
+        etherlink_spot_positions = all_balances["protocols"]["spot"]["etherlink"]
+        for token_symbol, token_data in etherlink_spot_positions.items():
+            # Exclure les totaux des positions
+            if token_symbol == "totals":
+                continue
             if token_data.get("value") and token_data["value"].get("USDC"):
-                positions[f"superlend.etherlink.{token_symbol}"] = token_data["value"]["USDC"]["amount"]
+                # Formater en USDC décimal
+                usdc_wei = token_data["value"]["USDC"]["amount"]
+                usdc_formatted = f"{Decimal(usdc_wei) / Decimal(10**6):.6f}"
+                positions[f"spot.etherlink.{token_symbol}"] = usdc_formatted
     
     # Sort positions by value in descending order
     sorted_positions = dict(sorted(
         positions.items(),
-        key=lambda x: Decimal(x[1]),
+        key=lambda x: float(x[1]),  # Convertir string en float pour le tri
         reverse=True
     ))
     
-    # Calculate total value from positions (all in USDC wei - 6 decimals)
-    total_value_usdc_wei = sum(Decimal(value) for value in sorted_positions.values())
+    # Calculate total value from positions (convert formatted values back to wei for calculation)
+    total_value_usdc_wei = sum(Decimal(value) * Decimal(10**6) for value in sorted_positions.values())
     
     # Convert to USDC with 6 decimals for display
     total_value_usdc = total_value_usdc_wei / Decimal(10**6)
@@ -174,7 +330,7 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
 
 def main():
     """
-    Main function to aggregate Superlend balance data.
+    Main function to aggregate Superlend and Spot balance data.
     Uses command line argument if provided, otherwise uses production address from .env.
     """
     # Get production address from environment
@@ -266,7 +422,7 @@ def main():
     
     # Display final result
     print("\n" + "="*80)
-    print("FINAL SUPERLEND AGGREGATED RESULT")
+    print("FINAL AGGREGATED RESULT (SUPERLEND + SPOT)")
     print("="*80 + "\n")
     print(json.dumps(final_result, indent=2))
     
