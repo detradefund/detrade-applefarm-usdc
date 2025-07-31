@@ -322,7 +322,7 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
     
     return {
         "nav": {
-            "usdc_wei": str(total_value_usdc_wei),
+            "usdc_wei": str(int(total_value_usdc_wei)),  # S'assurer que c'est un entier
             "usdc": f"{total_value_usdc:.6f}"
         },
         "positions": sorted_positions
