@@ -15,12 +15,14 @@ else:
 RPC_URLS = {
     "base": os.getenv('BASE_RPC'),
     "etherlink": os.getenv('ETHERLINK_RPC'),
+    "ethereum": os.getenv('ETHEREUM_RPC'),
 }
 
 # Chain IDs for network identification
 CHAIN_IDS = {
     "base": "8453",
-    "etherlink": "42793"
+    "etherlink": "42793",
+    "ethereum": "1"
 }
 
 # Complete network token configuration
@@ -29,6 +31,20 @@ CHAIN_IDS = {
 # 2. Base stablecoins
 # 3. Other tokens (governance, rewards, etc.)
 NETWORK_TOKENS = {
+    "ethereum": {
+        "USDC": {
+            "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "decimals": 6,
+            "name": "USD Coin",
+            "symbol": "USDC"
+        },
+        "USDT": {
+            "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+            "decimals": 6,
+            "name": "Tether USD",
+            "symbol": "USDT"
+        }
+    },
     "etherlink": {
         "applXTZ": {
             "address": "0xcFD2f5FAF6D92D963238E74321325A90BA67fCA3",
@@ -47,6 +63,12 @@ NETWORK_TOKENS = {
             "decimals": 6,
             "name": "USD Coin",
             "symbol": "USDC"
+        },
+        "USDT": {
+            "address": "0x2C03058C8AFC06713be23e58D2febC8337dbfE6A",
+            "decimals": 6,
+            "name": "Tether USD",
+            "symbol": "USDT"
         }
     }
 }

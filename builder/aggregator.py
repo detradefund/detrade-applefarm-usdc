@@ -16,6 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from superlend.check_balance import get_superlend_balances
 from shares.supply_reader import SupplyReader
 from spot.balance_manager import SpotBalanceManager
+from curve.curve_manager import CurveManager
 
 class BalanceAggregator:
     """
@@ -23,6 +24,7 @@ class BalanceAggregator:
     Currently supports:
     - Superlend (Etherlink) - slUSDC monitoring
     - Spot Tokens (Etherlink) - XTZ, WXTZ, Apple XTZ & USDC monitoring
+    - Curve (Etherlink) - USDC/USDT LP position monitoring with withdrawal optimization
     """
     
     def __init__(self):
@@ -31,13 +33,13 @@ class BalanceAggregator:
         
     def get_all_balances(self, address: str) -> Dict[str, Any]:
         """
-        Fetches balances from Superlend protocol and Spot tokens on Etherlink
+        Fetches balances from Superlend, Spot tokens, and Curve protocol on Etherlink
         """
         # Get UTC timestamp before any on-chain requests
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         
         print("\n" + "="*80)
-        print("FETCHING ALL BALANCES (SUPERLEND + SPOT)")
+        print("FETCHING ALL BALANCES (SUPERLEND + SPOT + CURVE)")
         print("="*80)
         
         # Convert address to checksum format
@@ -254,11 +256,128 @@ class BalanceAggregator:
                 "formatted": "0.0"
             }
         
+        # Get Curve balances (USDC/USDT LP position)
+        try:
+            print("\n" + "="*80)
+            print("CURVE BALANCE CHECKER (ETHERLINK)")
+            print("="*80 + "\n")
+            
+            # Initialize Curve manager
+            curve_manager = CurveManager(checksum_address, network="etherlink", pool_name="USDCUSDT")
+            curve_results = curve_manager.run()
+            
+            if curve_results and curve_results.get("positions"):
+                # Process Curve positions
+                curve_positions = {}
+                curve_total_wei = 0
+                
+                for pool_name, pool_data in curve_results["positions"].items():
+                    # Get the best withdrawal simulation (recommended strategy)
+                    best_withdrawal = None
+                    for sim in pool_data.get("withdrawal_simulations", []):
+                        if sim.get("recommended", False):
+                            best_withdrawal = sim
+                            break
+                    
+                    # If no recommended, take the first one or default to basic data
+                    if not best_withdrawal and pool_data.get("withdrawal_simulations"):
+                        best_withdrawal = pool_data["withdrawal_simulations"][0]
+                    
+                    # Calculate USDC value
+                    usdc_value_wei = 0
+                    conversion_details = {}
+                    
+                    if best_withdrawal and best_withdrawal.get("final_value"):
+                        final_value = best_withdrawal["final_value"]
+                        if "usdc_amount_wei" in final_value:
+                            usdc_value_wei = int(final_value["usdc_amount_wei"])
+                            conversion_details = {
+                                "source": final_value.get("strategy", "Unknown"),
+                                "rate": "optimized",
+                                "note": f"Best strategy: {final_value.get('strategy', 'Unknown')}"
+                            }
+                    else:
+                        # Fallback: use raw LP balance as USDC (rough estimate)
+                        lp_balance = float(pool_data["lp_balance"]["amount_formatted"])
+                        usdc_value_wei = int(lp_balance * 1e6)  # Rough 1:1 estimation
+                        conversion_details = {
+                            "source": "Estimated",
+                            "rate": "1.0",
+                            "note": "Rough LP to USDC estimation (1:1)"
+                        }
+                    
+                    curve_positions[pool_name] = {
+                        "staking_contract": pool_data["pool_address"],
+                        "amount": pool_data["lp_balance"]["amount_wei"],
+                        "decimals": pool_data["lp_balance"]["decimals"],
+                        "formatted_balance": pool_data["lp_balance"]["amount_formatted"],
+                        "pool_tokens": pool_data["pool_tokens"],
+                        "n_coins": pool_data["n_coins"],
+                        "withdrawal_simulations": pool_data.get("withdrawal_simulations", []),
+                        "value": {
+                            "USDC": {
+                                "amount": str(usdc_value_wei),
+                                "decimals": 6,
+                                "formatted": f"{usdc_value_wei / 1e6:.6f}",
+                                "conversion_details": conversion_details
+                            }
+                        }
+                    }
+                    
+                    curve_total_wei += usdc_value_wei
+                
+                # Add totals
+                if curve_positions:
+                    curve_total_formatted = str(Decimal(curve_total_wei) / Decimal(10**6))
+                    curve_positions["totals"] = {
+                        "wei": curve_total_wei,
+                        "formatted": curve_total_formatted
+                    }
+                    
+                    result["protocols"]["curve"] = {
+                        "etherlink": curve_positions,
+                        "totals": {
+                            "wei": curve_total_wei,
+                            "formatted": curve_total_formatted
+                        }
+                    }
+                    
+                    print("✓ Curve positions fetched successfully")
+                    
+                    # Add detailed logging for Curve
+                    print("\nCurve Etherlink positions:")
+                    for pool_name, pool_data in curve_positions.items():
+                        if pool_name == "totals":
+                            print(f"\nCurve totals:")
+                            print(f"  Total USDC value: {pool_data['formatted']}")
+                            print(f"  Total USDC value (wei): {pool_data['wei']}")
+                            continue
+                        print(f"\n{pool_name}:")
+                        print(f"  Pool address: {pool_data['staking_contract']}")
+                        print(f"  LP balance: {pool_data['formatted_balance']}")
+                        print(f"  Tokens in pool: {[token['symbol'] for token in pool_data['pool_tokens']]}")
+                        if pool_data.get('value') and pool_data['value'].get('USDC'):
+                            usdc_data = pool_data['value']['USDC']
+                            print(f"  USDC value: {usdc_data['formatted']}")
+                            print(f"  USDC value (wei): {usdc_data['amount']}")
+                            print(f"  Strategy: {usdc_data['conversion_details']['source']}")
+                        if pool_data.get('withdrawal_simulations'):
+                            print(f"  Withdrawal options:")
+                            for i, sim in enumerate(pool_data['withdrawal_simulations']):
+                                recommended = " (RECOMMENDED)" if sim.get('recommended', False) else ""
+                                print(f"    Option {i+1}: {sim['withdrawable_amount_formatted']} {sim['token_symbol']}{recommended}")
+            else:
+                print("No Curve positions found")
+                
+        except Exception as e:
+            print(f"✗ Error fetching Curve positions: {str(e)}")
+            # Don't add empty curve section on error
+        
         return result
 
 
 def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]:
-    """Build overview section with Superlend and Spot positions"""
+    """Build overview section with Superlend, Spot, and Curve positions"""
     
     # Initialize positions dictionary
     positions = {}
@@ -296,6 +415,19 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
                 usdc_wei = token_data["value"]["USDC"]["amount"]
                 usdc_formatted = f"{Decimal(usdc_wei) / Decimal(10**6):.6f}"
                 positions[f"spot.etherlink.{token_symbol}"] = usdc_formatted
+    
+    # Process Curve positions
+    if "protocols" in all_balances and "curve" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["curve"]:
+        etherlink_curve_positions = all_balances["protocols"]["curve"]["etherlink"]
+        for pool_name, pool_data in etherlink_curve_positions.items():
+            # Exclure les totaux des positions
+            if pool_name == "totals":
+                continue
+            if pool_data.get("value") and pool_data["value"].get("USDC"):
+                # Formater en USDC décimal
+                usdc_wei = pool_data["value"]["USDC"]["amount"]
+                usdc_formatted = f"{Decimal(usdc_wei) / Decimal(10**6):.6f}"
+                positions[f"curve.etherlink.{pool_name}"] = usdc_formatted
     
     # Sort positions by value in descending order
     sorted_positions = dict(sorted(
@@ -412,7 +544,7 @@ def main():
     
     # Display final result
     print("\n" + "="*80)
-    print("FINAL AGGREGATED RESULT (SUPERLEND + SPOT)")
+    print("FINAL AGGREGATED RESULT (SUPERLEND + SPOT + CURVE)")
     print("="*80 + "\n")
     print(json.dumps(final_result, indent=2))
     

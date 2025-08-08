@@ -1,0 +1,7 @@
+{
+  "network": "etherlink",
+  "pool_name": "USDCUSDT",
+  "pool_address": "0x2D84D79C852f6842AbE0304b70bBaA1506AdD457",
+  "lp_token": "0x2D84D79C852f6842AbE0304b70bBaA1506AdD457",
+  "abi": "CurveStableSwap"
+}
