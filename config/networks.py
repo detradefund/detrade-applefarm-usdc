@@ -41,6 +41,12 @@ NETWORK_TOKENS = {
             "decimals": 18,
             "name": "Wrapped XTZ",
             "symbol": "WXTZ"
+        },
+        "USDC": {
+            "address": "0x796Ea11Fa2dD751eD01b53C372fFDB4AAa8f00F9",
+            "decimals": 6,
+            "name": "USD Coin",
+            "symbol": "USDC"
         }
     }
 }
