@@ -218,11 +218,23 @@ class SpotBalanceManager:
                         network_total += int(usdc_amount)
                         total_usd_wei += int(usdc_amount)
                         
-                        # Add USDC data (only USDC value, no WXTZ intermediate)
+                        # Add USDC data (include WXTZ section for consistency with aggregator)
                         network_result[token_symbol] = {
                             "amount": str(balance),
                             "decimals": decimals,
                             "value": {
+                                "WXTZ": {
+                                    "amount": str(int(Decimal(balance) * Decimal(10**18) / Decimal(10**6))),  # Convert to 18 decimals for WXTZ equivalent
+                                    "decimals": 18,
+                                    "conversion_details": {
+                                        "source": "Calculated",
+                                        "price_impact": "0.0000%",
+                                        "rate": f"{1/Decimal(wxtz_usdc_rate):.6f}",
+                                        "fee_percentage": "0.0000%",
+                                        "fallback": False,
+                                        "note": f"1 USDC = {1/Decimal(wxtz_usdc_rate):.6f} WXTZ (inverse rate)"
+                                    }
+                                },
                                 "USDC": {
                                     "amount": usdc_amount,
                                     "decimals": 6,

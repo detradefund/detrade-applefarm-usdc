@@ -22,7 +22,7 @@ class BalanceAggregator:
     Master aggregator that combines balances from multiple protocols.
     Currently supports:
     - Superlend (Etherlink) - slUSDC monitoring
-    - Spot Tokens (Etherlink) - Apple XTZ monitoring
+    - Spot Tokens (Etherlink) - XTZ, WXTZ, Apple XTZ & USDC monitoring
     """
     
     def __init__(self):
@@ -46,9 +46,6 @@ class BalanceAggregator:
         # Initialize result structure
         result = {
             "protocols": {
-                "superlend": {
-                    "etherlink": {}
-                },
                 "spot": {
                     "etherlink": {}
                 }
@@ -131,18 +128,19 @@ class BalanceAggregator:
                         "formatted": etherlink_total_formatted
                     }
                 
-                result["protocols"]["superlend"]["etherlink"] = etherlink_positions
-                
-                # Ajouter les totaux pour le protocole Superlend
-                result["protocols"]["superlend"]["totals"] = {
-                    "wei": etherlink_total_wei,
-                    "formatted": etherlink_total_formatted
-                }
-                
-                print("✓ Superlend positions fetched successfully")
-                
-                # Add detailed logging for Superlend
+                # Créer la section superlend seulement si des positions existent
                 if etherlink_positions:
+                    result["protocols"]["superlend"] = {
+                        "etherlink": etherlink_positions,
+                        "totals": {
+                            "wei": etherlink_total_wei,
+                            "formatted": etherlink_total_formatted
+                        }
+                    }
+                    
+                    print("✓ Superlend positions fetched successfully")
+                    
+                    # Add detailed logging for Superlend
                     print("\nSuperlend Etherlink positions:")
                     for token_symbol, token_data in etherlink_positions.items():
                         # Exclure les totaux du logging des positions
@@ -163,21 +161,13 @@ class BalanceAggregator:
                             print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
                             print(f"  Source: {usdc_data['conversion_details']['source']}")
             else:
-                print("No Superlend balances found")
-                result["protocols"]["superlend"]["etherlink"] = {}
-                result["protocols"]["superlend"]["totals"] = {
-                    "wei": 0,
-                    "formatted": "0.0"
-                }
+                print("No Superlend balances found - skipping Superlend section")
+                # Ne pas ajouter de section superlend vide
         except Exception as e:
-            print(f"✗ Error fetching Superlend positions: {str(e)}")
-            result["protocols"]["superlend"]["etherlink"] = {}
-            result["protocols"]["superlend"]["totals"] = {
-                "wei": 0,
-                "formatted": "0.0"
-            }
+            print(f"✗ Error fetching Superlend positions: {str(e)} - skipping Superlend section")
+            # Ne pas ajouter de section superlend en cas d'erreur
         
-        # Get Spot balances (Apple XTZ)
+        # Get Spot balances (XTZ, WXTZ, Apple XTZ & USDC)
         try:
             print("\n" + "="*80)
             print("SPOT BALANCE CHECKER (ETHERLINK)")
