@@ -499,16 +499,14 @@ def main():
         total_supply_wei = aggregator.supply_reader.get_total_supply()
         total_supply_formatted = aggregator.supply_reader.format_total_supply()
         
-        # Calculate share price: NAV / Total Supply
-        nav_usdc_wei = Decimal(overview["nav"]["total_assets_wei"])
-        supply_wei = Decimal(total_supply_wei)
+        # Calculate share price: Total Assets (USDC) / Total Supply (dtUSDC)
+        nav_usdc = Decimal(overview["nav"]["total_assets"])
+        supply_formatted = Decimal(total_supply_wei) / Decimal(10**18)
         
-        if supply_wei > 0:
-            # Share price in USDC (with 18 decimals precision)
-            share_price_wei = nav_usdc_wei * Decimal(10**18) / supply_wei
-            share_price_formatted = share_price_wei / Decimal(10**6)  # Convert back to USDC (6 decimals)
+        if supply_formatted > 0:
+            # Share price = Total Assets / Total Supply
+            share_price_formatted = nav_usdc / supply_formatted
         else:
-            share_price_wei = Decimal(0)
             share_price_formatted = Decimal(0)
         
         print(f"Total Supply: {total_supply_formatted} dtUSDC")

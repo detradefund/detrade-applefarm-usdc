@@ -136,21 +136,20 @@ class BalancePusher:
                 total_supply_wei = self.aggregator.supply_reader.get_total_supply()
                 total_supply_formatted = self.aggregator.supply_reader.format_total_supply()
                 
-                # Calculate share price: NAV / Total Supply
+                # Calculate share price: Total Assets (USDC) / Total Supply (dtUSDC)
                 from decimal import Decimal
-                nav_usdc_wei = Decimal(overview["nav"]["usdc_wei"])
-                supply_wei = Decimal(total_supply_wei)
+                nav_usdc = Decimal(overview["nav"]["total_assets"])
+                supply_formatted = Decimal(total_supply_wei) / Decimal(10**18)
                 
-                if supply_wei > 0:
-                    # Share price in USDC (with 18 decimals precision)
-                    share_price_wei = nav_usdc_wei * Decimal(10**18) / supply_wei
-                    share_price_formatted = share_price_wei / Decimal(10**6)  # Convert back to USDC (6 decimals)
+                if supply_formatted > 0:
+                    # Share price = Total Assets / Total Supply
+                    share_price_formatted = nav_usdc / supply_formatted
                 else:
                     share_price_formatted = Decimal(0)
                 
                 logger.info(f"Total Supply: {total_supply_formatted} dtUSDC")
-                logger.info(f"NAV: {overview['nav']['usdc']} USDC")
-                logger.info(f"Share Price: {share_price_formatted:.6f} USDC per dtUSDC")
+                logger.info(f"Total Assets: {overview['nav']['total_assets']} USDC")
+                logger.info(f"Price per Share: {share_price_formatted:.6f} USDC per dtUSDC")
                 
             except Exception as e:
                 logger.error(f"Error calculating share price: {str(e)}")
