@@ -163,10 +163,10 @@ class BalancePusher:
             
             # Update nav with share price information
             enhanced_nav = {
-                "usdc_wei": overview["nav"]["usdc_wei"],
-                "usdc": overview["nav"]["usdc"],
-                "share_price": f"{share_price_formatted:.6f}",
-                "total_supply": total_supply_wei
+                "total_assets_wei": overview["nav"]["total_assets_wei"],
+                "total_assets": overview["nav"]["total_assets"],
+                "price_per_share": f"{share_price_formatted:.6f}",
+                "total_supply": f"{Decimal(total_supply_wei) / Decimal(10**18):.6f}"
             }
             
             # Combine overview with the rest of the data
@@ -206,9 +206,9 @@ class BalancePusher:
             logger.info("SUMMARY")
             logger.info("="*80)
             logger.info(f"Address: {address}")
-            logger.info(f"Total Value: {enhanced_nav['usdc']} USDC")
-            logger.info(f"Share Price: {enhanced_nav['share_price']} USDC per dtUSDC")
-            logger.info(f"Total Supply: {enhanced_nav['total_supply']} wei")
+            logger.info(f"Total Assets: {enhanced_nav['total_assets']} USDC")
+            logger.info(f"Price per Share: {enhanced_nav['price_per_share']} USDC per dtUSDC")
+            logger.info(f"Total Supply: {enhanced_nav['total_supply']} dtUSDC")
             logger.info(f"Collection started at: {prepared_data['timestamp']}")
             logger.info(f"Pushed at: {push_timestamp.strftime('%Y-%m-%d %H:%M:%S UTC')}")
             logger.info(f"Collection duration: {collection_duration:.2f} seconds")

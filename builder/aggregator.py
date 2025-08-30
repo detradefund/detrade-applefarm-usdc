@@ -444,8 +444,8 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
     
     return {
         "nav": {
-            "usdc_wei": str(int(total_value_usdc_wei)),  # S'assurer que c'est un entier
-            "usdc": f"{total_value_usdc:.6f}"
+            "total_assets_wei": str(int(total_value_usdc_wei)),  # S'assurer que c'est un entier
+            "total_assets": f"{total_value_usdc:.6f}"
         },
         "positions": sorted_positions
     }
@@ -500,7 +500,7 @@ def main():
         total_supply_formatted = aggregator.supply_reader.format_total_supply()
         
         # Calculate share price: NAV / Total Supply
-        nav_usdc_wei = Decimal(overview["nav"]["usdc_wei"])
+        nav_usdc_wei = Decimal(overview["nav"]["total_assets_wei"])
         supply_wei = Decimal(total_supply_wei)
         
         if supply_wei > 0:
@@ -512,8 +512,8 @@ def main():
             share_price_formatted = Decimal(0)
         
         print(f"Total Supply: {total_supply_formatted} dtUSDC")
-        print(f"NAV: {overview['nav']['usdc']} USDC")
-        print(f"Share Price: {share_price_formatted:.6f} USDC per dtUSDC")
+        print(f"Total Assets: {overview['nav']['total_assets']} USDC")
+        print(f"Price per Share: {share_price_formatted:.6f} USDC per dtUSDC")
         
     except Exception as e:
         print(f"✗ Error calculating share price: {str(e)}")
@@ -527,19 +527,25 @@ def main():
     
     # Update nav with share price information
     enhanced_nav = {
-        "usdc_wei": overview["nav"]["usdc_wei"],
-        "usdc": overview["nav"]["usdc"],
-        "share_price": f"{share_price_formatted:.6f}",
-        "total_supply": total_supply_wei
+        "total_assets": overview["nav"]["total_assets"],
+        "price_per_share": f"{share_price_formatted:.6f}",
+        "total_supply": f"{Decimal(total_supply_wei) / Decimal(10**18):.6f}",
+        "total_assets_wei": overview["nav"]["total_assets_wei"]
     }
+    
+    # Extract spot data from protocols
+    spot_data = all_balances["protocols"].get("spot", {})
+    # Remove spot from protocols
+    protocols_without_spot = {k: v for k, v in all_balances["protocols"].items() if k != "spot"}
     
     final_result = {
         "timestamp": timestamp,
         "created_at": created_at,
         "address": address,
         "nav": enhanced_nav,
+        "spot": spot_data,
         "positions": overview["positions"],
-        "protocols": all_balances["protocols"]
+        "protocols": protocols_without_spot
     }
     
     # Display final result
