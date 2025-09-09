@@ -8,8 +8,8 @@ import logging
 from utils.retry import Web3Retry
 
 """
-dtUSDC token supply reader.
-Minimal implementation to read total supply of DeTrade USDC tokens.
+afUSDC token supply reader.
+Minimal implementation to read total supply of Applefarm USDC tokens.
 """
 
 # Configure logging
@@ -33,11 +33,11 @@ from config.networks import RPC_URLS
 
 # Contract configuration
 CONTRACT_ADDRESS = "0x0a63471da694fc822f5a0a0b65978dda8c8edbe5"
-CONTRACT_NAME = "dtUSDC"
+CONTRACT_NAME = "afUSDC"
 
 class SupplyReader:
     """
-    Simple reader for dtUSDC token total supply on Base network.
+    Simple reader for afUSDC token total supply on Base network.
     """
     
     def __init__(self, address: str = None, rpc_url: str = None):
@@ -93,9 +93,9 @@ class SupplyReader:
         return formatted_supply
 
 def main():
-    """CLI utility to check dtUSDC total supply"""
+    """CLI utility to check afUSDC total supply"""
     try:
-        logger.info("\n=== dtUSDC Supply Reader ===")
+        logger.info("\n=== afUSDC Supply Reader ===")
         reader = SupplyReader()
         reader.format_total_supply()
     except Exception as e:

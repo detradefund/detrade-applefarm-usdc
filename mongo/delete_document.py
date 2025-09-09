@@ -81,11 +81,12 @@ def main():
     """CLI entry point for document deletion"""
     if len(sys.argv) < 4:
         print("Usage: python -m mongo.delete_document <database_name> <collection_name> <document_id1> [document_id2 ...]")
-        print("Example: python -m mongo.delete_document detrade-core-usdc oracle 6808a235759fa6a5b09dcc63 6808a235759fa6a5b09dcc64")
+        print("Example: python -m mongo.delete_document $DATABASE $MONGO_COLLECTION 6808a235759fa6a5b09dcc63 6808a235759fa6a5b09dcc64")
         sys.exit(1)
         
-    database_name = sys.argv[1]
-    collection_name = sys.argv[2]
+    # Use command line arguments or fall back to environment variables
+    database_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv('DATABASE_NAME', 'applefarm-usdc')
+    collection_name = sys.argv[2] if len(sys.argv) > 2 else os.getenv('MONGO_COLLECTION', 'oracle')
     doc_ids = sys.argv[3:]
     delete_documents(database_name, collection_name, doc_ids)
 

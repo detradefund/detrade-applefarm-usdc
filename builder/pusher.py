@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 logger.info(f"Looking for .env file at: {env_path}")
 logger.info(f".env file exists: {env_path.exists()}")
 logger.info(f"MONGO_URI exists: {bool(os.getenv('MONGO_URI'))}")
-logger.info(f"DATABASE_NAME_1 exists: {bool(os.getenv('DATABASE_NAME_1'))}")
+logger.info(f"DATABASE_NAME exists: {bool(os.getenv('DATABASE_NAME'))}")
 logger.info(f"COLLECTION_NAME exists: {bool(os.getenv('COLLECTION_NAME'))}")
 logger.info(f"ADDRESSES exists: {bool(os.getenv('ADDRESSES'))}")
 
@@ -42,7 +42,7 @@ class BalancePusher:
     def __init__(self, database_name=None, collection_name=None):
         # Required MongoDB configuration from environment variables
         self.mongo_uri = os.getenv('MONGO_URI')
-        self.database_name = database_name or os.getenv('DATABASE_NAME_1')
+        self.database_name = database_name or os.getenv('DATABASE_NAME')
         self.collection_name = collection_name or os.getenv('COLLECTION_NAME')
         
         if not all([self.mongo_uri, self.database_name, self.collection_name]):
@@ -199,7 +199,7 @@ class BalancePusher:
             else:
                 raise Exception("Document verification failed")
 
-            # 7. Print summary avec la durée de collection
+            # 7. Print summary with collection duration
             collection_duration = (push_timestamp - collection_timestamp).total_seconds()
             logger.info("="*80)
             logger.info("SUMMARY")
@@ -234,7 +234,7 @@ def main():
     configurations = [
         {
             'address': os.getenv('PRODUCTION_ADDRESS', '0xA6548c1F8D3F3c97f75deE8D030B942b6c88B6ce'),
-            'database_name': os.getenv('DATABASE_NAME_1', 'detrade-core-usdc'),
+            'database_name': os.getenv('DATABASE_NAME', 'detrade-core-usdc'),
             'collection_name': os.getenv('COLLECTION_NAME', 'oracle')
         }
     ]

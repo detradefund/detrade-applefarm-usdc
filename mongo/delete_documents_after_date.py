@@ -13,8 +13,8 @@ def delete_documents_after_date(database_name: str, cutoff_date: str) -> None:
     try:
         # Get MongoDB URI from .env
         mongo_uri = os.getenv('MONGO_URI')
-        # Hardcoded collection name
-        collection_name = "oracle"
+        # Get collection name from environment variable
+        collection_name = os.getenv('MONGO_COLLECTION', 'oracle')
         
         print("\nConnecting to MongoDB...")
         print(f"Database: {database_name}")
@@ -85,10 +85,10 @@ def main():
     """CLI entry point for document deletion by date"""
     if len(sys.argv) != 3:
         print("Usage: python -m mongo.delete_documents_after_date <database_name> <cutoff_date>")
-        print("Example: python -m mongo.delete_documents_after_date detrade-core-eth '2025-06-03 11:25:41 UTC'")
+        print("Example: python -m mongo.delete_documents_after_date $DATABASE_NAME '2025-06-03 11:25:41 UTC'")
         sys.exit(1)
         
-    database_name = sys.argv[1]
+    database_name = sys.argv[1] if len(sys.argv) > 1 else os.getenv('DATABASE_NAME', 'applefarm-usdc')
     cutoff_date = sys.argv[2]
     delete_documents_after_date(database_name, cutoff_date)
 

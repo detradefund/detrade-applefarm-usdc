@@ -71,7 +71,7 @@ class CurveBalanceManager:
         # Get number of coins in the pool
         try:
             n_coins = pool_contract.functions.N_COINS().call()
-            print(f"🔍 Pool {pool_name} has {n_coins} tokens")
+            print(f"Pool {pool_name} has {n_coins} tokens")
         except Exception as e:
             print(f"Error getting N_COINS: {e}")
             return []
@@ -132,10 +132,10 @@ class CurveBalanceManager:
                 }
                 
                 tokens.append(token_info)
-                print(f"    ✅ {symbol} ({name}) - {decimals} decimals")
+                print(f"    {symbol} ({name}) - {decimals} decimals")
                 
             except Exception as e:
-                print(f"  ❌ Error getting token {i}: {e}")
+                print(f"  Error getting token {i}: {e}")
                 continue
         
         return tokens
@@ -228,7 +228,7 @@ class CurveBalanceManager:
         
         withdrawal_simulations = []
         
-        print(f"\n🧮 Simulating withdrawals for {lp_amount_wei / 1e18:.6f} LP tokens:")
+        print(f"\nSimulating withdrawals for {lp_amount_wei / 1e18:.6f} LP tokens:")
         
         # Simulate withdrawal for each token
         for token in pool_tokens:
@@ -256,11 +256,11 @@ class CurveBalanceManager:
                 
                 withdrawal_simulations.append(simulation)
                 
-                print(f"  💰 Option {token['index']}: Withdraw {token_amount:.6f} {token['symbol']}")
+                print(f"  Option {token['index']}: Withdraw {token_amount:.6f} {token['symbol']}")
                 print(f"     Token: {token['name']} ({token['address']})")
                 
             except Exception as e:
-                print(f"  ❌ Error simulating withdrawal for {token['symbol']}: {str(e)}")
+                print(f"  Error simulating withdrawal for {token['symbol']}: {str(e)}")
                 continue
         
         return withdrawal_simulations
@@ -286,13 +286,13 @@ class CurveBalanceManager:
         try:
             from cowswap.cow_client import get_quote
         except ImportError:
-            print("⚠️ CoWSwap client not available, skipping pricing analysis")
+            print("CoWSwap client not available, skipping pricing analysis")
             return basic_simulations
         
         enhanced_simulations = []
         best_option = {"value_usdc": 0, "strategy": "", "details": {}}
         
-        print(f"\n💰 Pricing Analysis (Bridge 1:1 + CoWSwap on Ethereum):")
+        print(f"\nPricing Analysis (Bridge 1:1 + CoWSwap on Ethereum):")
         
         for sim in basic_simulations:
             token_symbol = sim['token_symbol']
@@ -317,7 +317,7 @@ class CurveBalanceManager:
                         "details": enhanced_sim
                     }
                 
-                print(f"  🟢 Direct USDC: {usdc_value / 1e6:.6f} USDC (no conversion)")
+                print(f"  Direct USDC: {usdc_value / 1e6:.6f} USDC (no conversion)")
                 
             elif token_symbol == "USDT":
                 # USDT -> Bridge 1:1 -> Swap USDT→USDC on Ethereum
@@ -356,19 +356,19 @@ class CurveBalanceManager:
                             }
                         
                         rate = float(quote_result["conversion_details"]["rate"])
-                        print(f"  🔄 USDT→USDC: {usdc_amount / 1e6:.6f} USDC (rate: {rate:.6f})")
+                        print(f"  USDT→USDC: {usdc_amount / 1e6:.6f} USDC (rate: {rate:.6f})")
                         print(f"     Bridge: {withdrawable_amount / 1e6:.6f} USDT (1:1)")
                         print(f"     CoWSwap: {withdrawable_amount / 1e6:.6f} USDT → {usdc_amount / 1e6:.6f} USDC")
                         
                     else:
-                        print(f"  ❌ Failed to get CoWSwap quote for USDT→USDC")
+                        print(f"  Failed to get CoWSwap quote for USDT→USDC")
                         enhanced_sim["final_value"] = {
                             "error": "Failed to get conversion quote",
                             "strategy": "USDT withdrawal (no pricing available)"
                         }
                         
                 except Exception as e:
-                    print(f"  ❌ Error pricing USDT conversion: {str(e)}")
+                    print(f"  Error pricing USDT conversion: {str(e)}")
                     enhanced_sim["final_value"] = {
                         "error": str(e),
                         "strategy": "USDT withdrawal (pricing failed)"
@@ -378,7 +378,7 @@ class CurveBalanceManager:
         
         # Add best strategy recommendation
         if best_option["strategy"]:
-            print(f"\n🏆 Best Strategy: {best_option['strategy']}")
+            print(f"\nBest Strategy: {best_option['strategy']}")
             print(f"   Final USDC: {best_option['value_usdc'] / 1e6:.6f}")
             
             for sim in enhanced_simulations:
@@ -492,7 +492,7 @@ def main():
         if args.show_tokens:
             print(f"\n=== Pool Tokens ===")
             for token in pool_info['tokens']:
-                status = "✅ Known" if token['known_token'] else "🔍 Detected"
+                status = "Known" if token['known_token'] else "Detected"
                 print(f"  {token['index']}: {token['symbol']} ({token['name']}) {status}")
                 print(f"     Address: {token['address']}")
                 print(f"     Decimals: {token['decimals']}")
@@ -531,4 +531,4 @@ def main():
         traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    main()
