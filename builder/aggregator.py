@@ -460,9 +460,27 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
     
     # Process Merkl rewards
     if "protocols" in all_balances and "merkl" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["merkl"]:
+        # Get WXTZ/USDC rate from spot data for consistent pricing
+        wxtz_usdc_rate = None
+        if "spot" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["spot"]:
+            etherlink_spot = all_balances["protocols"]["spot"]["etherlink"]
+            for token_data in etherlink_spot.values():
+                if token_data.get("value") and token_data["value"].get("USDC"):
+                    usdc_data = token_data["value"]["USDC"]
+                    if usdc_data.get("conversion_details") and usdc_data["conversion_details"].get("rate"):
+                        wxtz_usdc_rate = Decimal(usdc_data["conversion_details"]["rate"])
+                        break
+
         for reward in all_balances["protocols"]["merkl"]["etherlink"]:
             if reward.get("total_claimable"):
-                positions[f"merkl.etherlink.{reward['token']}"] = reward["total_claimable"]["amount"]
+                reward_amount = Decimal(reward["total_claimable"]["amount_wei"]) / Decimal(10**18)  # Convert from wei to applXTZ
+                if wxtz_usdc_rate and reward["token"] == "applXTZ":
+                    # Convert applXTZ to USDC using the same rate as spot
+                    usdc_amount = reward_amount * wxtz_usdc_rate
+                    positions[f"merkl.etherlink.{reward['token']}"] = f"{usdc_amount:.6f}"
+                else:
+                    # Fallback to original amount if token is not applXTZ or rate not found
+                    positions[f"merkl.etherlink.{reward['token']}"] = reward["total_claimable"]["amount"]
     
     # Sort positions by value in descending order
     sorted_positions = dict(sorted(

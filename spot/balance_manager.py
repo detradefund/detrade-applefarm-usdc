@@ -71,7 +71,7 @@ class SpotBalanceManager:
         """
         try:
             # API endpoint for the USDC/WXTZ pool on Etherlink
-            url = "https://api.geckoterminal.com/api/v2/search/pools?query=0x508060a01f11d6a2eb774b55aeba95931265e0cc&network=etherlink&page=1"
+            url = "https://api.geckoterminal.com/api/v2/search/pools?query=0xd03b92a27947bb08dd269107d4df00f8ab53fc28&network=etherlink&page=1"
             
             response = requests.get(url, timeout=10)
             response.raise_for_status()
@@ -82,17 +82,17 @@ class SpotBalanceManager:
                 pool_data = data["data"][0]
                 attributes = pool_data.get("attributes", {})
                 
-                # Get WXTZ price in USDC (quote_token_price_base_token)
-                wxtz_usdc_price = attributes.get("quote_token_price_base_token")
+                # Get WXTZ price in USD (quote_token_price_usd)
+                wxtz_usd_price = attributes.get("quote_token_price_usd")
                 
-                if wxtz_usdc_price:
-                    return str(wxtz_usdc_price), {
+                if wxtz_usd_price:
+                    return str(wxtz_usd_price), {
                         "source": "GeckoTerminal API",
                         "price_impact": "Live market rate",
-                        "rate": str(wxtz_usdc_price),
+                        "rate": str(wxtz_usd_price),
                         "fee_percentage": "N/A",
                         "fallback": False,
-                        "note": f"Live WXTZ/USDC rate from pool {attributes.get('name', 'USDC/WXTZ')}"
+                        "note": f"Live WXTZ/USD rate from pool {attributes.get('name', 'WETH/WXTZ')}"
                     }
             
             # Fallback if no data found
