@@ -204,74 +204,84 @@ class BalanceAggregator:
             print("="*80 + "\n")
             spot_balances = self.spot_manager.get_balances(checksum_address)
             
-            if spot_balances and "etherlink" in spot_balances:
-                etherlink_spot = spot_balances["etherlink"]
-                spot_positions = {}
-                
-                for token_symbol, token_data in etherlink_spot.items():
-                    if token_symbol == "totals":
-                        continue
-                    
-                    if token_data.get("value") and token_data["value"].get("USDC"):
-                        usdc_data = token_data["value"]["USDC"]
-                        
-                        spot_positions[token_symbol] = {
-                            "amount": token_data["amount"],
-                            "decimals": token_data["decimals"],
-                            "formatted_balance": f"{Decimal(token_data['amount']) / Decimal(10**token_data['decimals']):.6f}",
-                            "value": {
-                                "WXTZ": token_data["value"]["WXTZ"],
-                                "USDC": usdc_data
-                            }
-                        }
-                
-                # Calculate spot totals
-                spot_total_wei = sum(
-                    int(token_data["value"]["USDC"]["amount"]) 
-                    for token_data in spot_positions.values() 
-                    if token_data.get("value") and token_data["value"].get("USDC")
-                )
-                spot_total_formatted = str(Decimal(spot_total_wei) / Decimal(10**6))
-                
-                # Add totals
-                if spot_positions:
-                    spot_positions["totals"] = {
-                        "wei": spot_total_wei,
-                        "formatted": spot_total_formatted
-                    }
-                
-                result["protocols"]["spot"]["etherlink"] = spot_positions
-                result["protocols"]["spot"]["totals"] = {
-                    "wei": spot_total_wei,
-                    "formatted": spot_total_formatted
-                }
-                
-                print("✓ Spot positions fetched successfully")
-                
-                # Add detailed logging for Spot
-                if spot_positions:
-                    print("\nSpot Etherlink positions:")
-                    for token_symbol, token_data in spot_positions.items():
-                        if token_symbol == "totals":
-                            print(f"\nSpot totals:")
-                            print(f"  Total USDC value: {token_data['formatted']}")
-                            print(f"  Total USDC value (wei): {token_data['wei']}")
-                            continue
-                        print(f"\n{token_symbol}:")
-                        print(f"  Raw balance: {token_data['amount']}")
-                        print(f"  Formatted balance: {token_data['formatted_balance']}")
-                        if token_data.get('value') and token_data['value'].get('USDC'):
-                            usdc_data = token_data['value']['USDC']
-                            print(f"  USDC value: {usdc_data['formatted']}")
-                            print(f"  USDC value (wei): {usdc_data['amount']}")
-                            print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
-                            print(f"  Source: {usdc_data['conversion_details']['source']}")
-            else:
-                print("No spot balances found")
-                result["protocols"]["spot"]["etherlink"] = {}
-                result["protocols"]["spot"]["totals"] = {
+            # Initialize spot data structure
+            result["protocols"]["spot"] = {
+                "etherlink": {},
+                "base": {},
+                "totals": {
                     "wei": 0,
                     "formatted": "0.0"
+                }
+            }
+            
+            total_spot_wei = 0
+            
+            # Process each network
+            for network in ["etherlink", "base"]:
+                if spot_balances and network in spot_balances:
+                    network_spot = spot_balances[network]
+                    spot_positions = {}
+                    network_total_wei = 0
+                    
+                    for token_symbol, token_data in network_spot.items():
+                        if token_symbol == "totals":
+                            continue
+                        
+                        if token_data.get("value") and token_data["value"].get("USDC"):
+                            usdc_data = token_data["value"]["USDC"]
+                            position_data = {
+                                "amount": token_data["amount"],
+                                "decimals": token_data["decimals"],
+                                "formatted_balance": f"{Decimal(token_data['amount']) / Decimal(10**token_data['decimals']):.6f}",
+                                "value": {
+                                    "USDC": usdc_data
+                                }
+                            }
+                            
+                            # Add WXTZ value only for Etherlink tokens
+                            if network == "etherlink" and "WXTZ" in token_data["value"]:
+                                position_data["value"]["WXTZ"] = token_data["value"]["WXTZ"]
+                            
+                            spot_positions[token_symbol] = position_data
+                            network_total_wei += int(usdc_data["amount"])
+                    
+                    # Add network totals
+                    if spot_positions:
+                        network_total_formatted = str(Decimal(network_total_wei) / Decimal(10**6))
+                        spot_positions["totals"] = {
+                            "wei": network_total_wei,
+                            "formatted": network_total_formatted
+                        }
+                        total_spot_wei += network_total_wei
+                    
+                    result["protocols"]["spot"][network] = spot_positions
+                    
+                    print(f"✓ Spot {network} positions fetched successfully")
+                    
+                    # Add detailed logging for network
+                    if spot_positions:
+                        print(f"\nSpot {network} positions:")
+                        for token_symbol, token_data in spot_positions.items():
+                            if token_symbol == "totals":
+                                print(f"\n{network} totals:")
+                                print(f"  Total USDC value: {token_data['formatted']}")
+                                print(f"  Total USDC value (wei): {token_data['wei']}")
+                                continue
+                            print(f"\n{token_symbol}:")
+                            print(f"  Raw balance: {token_data['amount']}")
+                            print(f"  Formatted balance: {token_data['formatted_balance']}")
+                            if token_data.get('value') and token_data['value'].get('USDC'):
+                                usdc_data = token_data['value']['USDC']
+                                print(f"  USDC value: {usdc_data['formatted']}")
+                                print(f"  USDC value (wei): {usdc_data['amount']}")
+                                print(f"  Conversion rate: {usdc_data['conversion_details']['rate']}")
+                                print(f"  Source: {usdc_data['conversion_details']['source']}")
+            
+            # Update global spot totals
+            if total_spot_wei > 0:
+                result["protocols"]["spot"]["totals"] = {
+                    "wei": total_spot_wei,
+                    "formatted": str(Decimal(total_spot_wei) / Decimal(10**6))
                 }
                 
         except Exception as e:
@@ -423,15 +433,19 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
             positions["superlend.etherlink.total"] = superlend_formatted
     
     # Process Spot positions
-    if "protocols" in all_balances and "spot" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["spot"]:
-        etherlink_spot_positions = all_balances["protocols"]["spot"]["etherlink"]
-        for token_symbol, token_data in etherlink_spot_positions.items():
-            if token_symbol == "totals":
-                continue
-            if token_data.get("value") and token_data["value"].get("USDC"):
-                usdc_wei = token_data["value"]["USDC"]["amount"]
-                usdc_formatted = f"{Decimal(usdc_wei) / Decimal(10**6):.6f}"
-                positions[f"spot.etherlink.{token_symbol}"] = usdc_formatted
+    if "protocols" in all_balances and "spot" in all_balances["protocols"]:
+        spot_data = all_balances["protocols"]["spot"]
+        # Process each network
+        for network in ["etherlink", "base"]:
+            if network in spot_data:
+                network_positions = spot_data[network]
+                for token_symbol, token_data in network_positions.items():
+                    if token_symbol == "totals":
+                        continue
+                    if token_data.get("value") and token_data["value"].get("USDC"):
+                        usdc_wei = token_data["value"]["USDC"]["amount"]
+                        usdc_formatted = f"{Decimal(usdc_wei) / Decimal(10**6):.6f}"
+                        positions[f"spot.{network}.{token_symbol}"] = usdc_formatted
     
     # Process Curve positions
     if "protocols" in all_balances and "curve" in all_balances["protocols"] and "etherlink" in all_balances["protocols"]["curve"]:
@@ -539,6 +553,19 @@ def main():
     
     spot_data = all_balances["protocols"].get("spot", {})
     protocols_without_spot = {k: v for k, v in all_balances["protocols"].items() if k != "spot"}
+    
+    # Calculate total spot balance across all networks
+    total_spot_wei = 0
+    for network in ["etherlink", "base"]:
+        if network in spot_data and "totals" in spot_data[network]:
+            total_spot_wei += spot_data[network]["totals"]["wei"]
+    
+    # Update spot totals
+    if total_spot_wei > 0:
+        spot_data["totals"] = {
+            "wei": total_spot_wei,
+            "formatted": f"{total_spot_wei/1e6:.6f}"
+        }
     
     final_result = {
         "timestamp": timestamp,

@@ -45,6 +45,14 @@ NETWORK_TOKENS = {
             "symbol": "USDT"
         }
     },
+    "base": {
+        "USDC": {
+            "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "decimals": 6,
+            "name": "USD Coin",
+            "symbol": "USDC"
+        }
+    },
     "etherlink": {
         "applXTZ": {
             "address": "0xcFD2f5FAF6D92D963238E74321325A90BA67fCA3",

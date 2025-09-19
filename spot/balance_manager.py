@@ -24,7 +24,8 @@ class SpotBalanceManager:
     def __init__(self):
         # Initialize Web3 connections for each network
         self.connections = {
-            "etherlink": Web3(Web3.HTTPProvider(RPC_URLS['etherlink']))
+            "etherlink": Web3(Web3.HTTPProvider(RPC_URLS['etherlink'])),
+            "base": Web3(Web3.HTTPProvider(RPC_URLS['base']))
         }
         
         # Initialize contracts for each network
@@ -139,6 +140,64 @@ class SpotBalanceManager:
         total_usd_wei = 0
         
         try:
+            # Process Base network first (simpler, only USDC)
+            network = "base"
+            print(f"\nProcessing network: {network}")
+            network_total = 0
+            
+            # Initialize network structure
+            network_result = {}
+            
+            # Process USDC on Base
+            if "USDC" in self.contracts and network in self.contracts["USDC"]:
+                contract = self.contracts["USDC"][network]
+                balance = Web3Retry.call_contract_function(
+                    contract.functions.balanceOf(checksum_address).call
+                )
+                
+                decimals = NETWORK_TOKENS[network]["USDC"]["decimals"]
+                balance_normalized = Decimal(balance) / Decimal(10**decimals)
+                
+                print(f"\nProcessing token: USDC on {network}")
+                print(f"  Amount: {balance_normalized:.6f} USDC")
+                
+                if balance > 0:
+                    # Direct 1:1 conversion for USDC
+                    usdc_amount = str(balance)
+                    
+                    network_total += int(usdc_amount)
+                    total_usd_wei += int(usdc_amount)
+                    
+                    network_result["USDC"] = {
+                        "amount": str(balance),
+                        "decimals": decimals,
+                        "value": {
+                            "USDC": {
+                                "amount": usdc_amount,
+                                "decimals": 6,
+                                "formatted": f"{Decimal(usdc_amount) / Decimal(10**6):.6f}",
+                                "conversion_details": {
+                                    "source": "Direct",
+                                    "price_impact": "0.0000%",
+                                    "rate": "1.000000",
+                                    "fee_percentage": "0.0000%",
+                                    "fallback": False,
+                                    "note": "1 USDC = 1 USDC (no conversion needed)"
+                                }
+                            }
+                        }
+                    }
+                else:
+                    print("  → Balance is 0, skipping")
+            
+            # Add network totals if there are balances
+            if network_total > 0:
+                network_result["totals"] = {
+                    "wei": network_total,
+                    "formatted": f"{network_total/1e6:.6f}"
+                }
+                result[network] = network_result
+            
             # Process Etherlink network
             network = "etherlink"
             print(f"\nProcessing network: {network}")
@@ -346,7 +405,8 @@ class SpotBalanceManager:
                     "etherlink": NETWORK_TOKENS["etherlink"]["applXTZ"]
                 },
                 "USDC": {
-                    "etherlink": NETWORK_TOKENS["etherlink"]["USDC"]
+                    "etherlink": NETWORK_TOKENS["etherlink"]["USDC"],
+                    "base": NETWORK_TOKENS["base"]["USDC"]
                 }
             }
         }

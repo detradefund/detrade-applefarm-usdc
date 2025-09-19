@@ -15,7 +15,6 @@ def check_mongodb():
 
         # Get database name and collection from environment variables
         database_name = os.getenv('DATABASE_NAME', 'detrade-applefarm-usdc')
-        
         collection_name = os.getenv('MONGO_COLLECTION', 'oracle')
         
         # Connect to MongoDB
