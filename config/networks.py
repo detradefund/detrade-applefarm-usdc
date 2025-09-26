@@ -47,7 +47,7 @@ NETWORK_TOKENS = {
     },
     "base": {
         "USDC": {
-            "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "address": "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
             "decimals": 6,
             "name": "USD Coin",
             "symbol": "USDC"
@@ -59,6 +59,12 @@ NETWORK_TOKENS = {
             "decimals": 18,
             "name": "Apple XTZ",
             "symbol": "applXTZ"
+        },
+        "applstXTZ": {
+            "address": "0x0008b6C5b44305693bEB4Cd6E1A91b239D2A041E",
+            "decimals": 6,
+            "name": "Apple stXTZ",
+            "symbol": "applstXTZ"
         },
         "WXTZ": {
             "address": "0xc9B53AB2679f573e480d01e0f49e2B5CFB7a3EAb",

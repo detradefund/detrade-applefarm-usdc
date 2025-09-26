@@ -73,14 +73,14 @@ class BalanceAggregator:
                 for reward in merkl_rewards["etherlink"]:
                     print(f"\nToken: {reward['token']}")
                     print(f"Total claimable: {reward['total_claimable']['amount']} "
-                          f"(${reward['total_claimable']['usd_value']:.2f})")
+                          f"(USDC {reward['total_claimable']['usdc_value']['formatted']})")
                     
                     print("\nActive campaigns:")
                     for campaign in reward["campaigns"]:
                         print(f"\n  Campaign {campaign['id']}...")
                         print(f"  Type: {campaign['type']}")
                         print(f"  Claimable: {campaign['claimable']['amount']} "
-                              f"(${campaign['claimable']['usd_value']:.2f})")
+                              f"(USDC {campaign['claimable']['usdc_value']['formatted']})")
             else:
                 print("No Merkl rewards found")
         except Exception as e:
@@ -472,15 +472,11 @@ def build_overview(all_balances: Dict[str, Any], address: str) -> Dict[str, Any]
                         break
 
         for reward in all_balances["protocols"]["merkl"]["etherlink"]:
-            if reward.get("total_claimable"):
-                reward_amount = Decimal(reward["total_claimable"]["amount_wei"]) / Decimal(10**18)  # Convert from wei to applXTZ
-                if wxtz_usdc_rate and reward["token"] == "applXTZ":
-                    # Convert applXTZ to USDC using the same rate as spot
-                    usdc_amount = reward_amount * wxtz_usdc_rate
-                    positions[f"merkl.etherlink.{reward['token']}"] = f"{usdc_amount:.6f}"
-                else:
-                    # Fallback to original amount if token is not applXTZ or rate not found
-                    positions[f"merkl.etherlink.{reward['token']}"] = reward["total_claimable"]["amount"]
+            if (reward.get("total_claimable") and 
+                reward["total_claimable"].get("usdc_value") and 
+                reward["total_claimable"]["usdc_value"]["formatted"] != "0.000000"):
+                # Utiliser directement la valeur USDC calculée par le client Merkl
+                positions[f"merkl.etherlink.{reward['token']}"] = reward["total_claimable"]["usdc_value"]["formatted"]
     
     # Sort positions by value in descending order
     sorted_positions = dict(sorted(

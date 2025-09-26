@@ -2,13 +2,33 @@ import requests
 from typing import Dict, Any, Optional, List
 from decimal import Decimal
 
+import sys
+from pathlib import Path
+
+# Add parent directory to PYTHONPATH for importing from spot
+root_path = str(Path(__file__).parent.parent)
+sys.path.append(root_path)
+
+from spot.balance_manager import SpotBalanceManager
+
 class MerklClient:
     """Client for interacting with the Merkl API."""
     
     BASE_URL = "https://api.merkl.xyz/v4"
     
+    # Token decimals mapping
+    TOKEN_DECIMALS = {
+        "WXTZ": 18,
+        "applXTZ": 18,
+        "applstXTZ": 6,
+        "stXTZ": 6,
+        "USDC": 6,
+        "USDT": 6
+    }
+    
     def __init__(self):
         self.session = requests.Session()
+        self.spot_manager = SpotBalanceManager()  # Pour obtenir les taux de conversion
     
     def get_user_rewards(self, user_address: str, chain_id: int) -> Dict[str, Any]:
         """Fetch rewards for a specific user on a specific chain."""
@@ -20,11 +40,13 @@ class MerklClient:
         
         return response.json()
 
-    @staticmethod
-    def format_amount(amount: str, decimals: int = 18) -> str:
+    def format_amount(self, amount: str, token_symbol: str = None) -> str:
         """Format a token amount from wei to human readable format."""
         if not amount:
             return "0"
+        
+        # Get token decimals, default to 18 if token not in mapping
+        decimals = self.TOKEN_DECIMALS.get(token_symbol, 18) if token_symbol else 18
         amount_decimal = Decimal(amount) / Decimal(10 ** decimals)
         return f"{amount_decimal:.6f}"
 
@@ -34,6 +56,49 @@ class MerklClient:
         amount_dec = Decimal(amount if amount else "0")
         claimed_dec = Decimal(claimed if claimed else "0")
         return str(max(amount_dec - claimed_dec, 0))
+
+    def convert_to_usdc(self, amount: str, token_symbol: str) -> tuple[str, dict]:
+        """
+        Convert a token amount to USDC using the same logic as SpotBalanceManager
+        Returns (usdc_amount, conversion_details)
+        """
+        if token_symbol == "USDC":
+            return amount, {
+                "source": "Direct",
+                "price_impact": "0.0000%",
+                "rate": "1.000000",
+                "fee_percentage": "0.0000%",
+                "fallback": False,
+                "note": "1 USDC = 1 USDC (no conversion needed)"
+            }
+        
+        # Get conversion rates
+        wxtz_usdc_rate, price_details = self.spot_manager._get_wxtz_usdc_price()
+        
+        if token_symbol == "applstXTZ":
+            # Pour applstXTZ, on doit d'abord convertir en WXTZ via stXTZ
+            stxtz_wxtz_rate, stxtz_details = self.spot_manager._get_stxtz_wxtz_price()
+            
+            # Convert applstXTZ to WXTZ (via stXTZ)
+            wxtz_amount = str(int(Decimal(amount) * Decimal(stxtz_wxtz_rate) * Decimal(10**12)))  # 6 to 18 decimals
+            
+            # Convert WXTZ to USDC
+            usdc_amount = str(int(Decimal(wxtz_amount) * Decimal(wxtz_usdc_rate) * Decimal(10**6) / Decimal(10**18)))
+            
+            return usdc_amount, {
+                "source": "Via stXTZ/WXTZ pool",
+                "price_impact": "Two-step conversion",
+                "rate": f"{float(Decimal(stxtz_wxtz_rate) * Decimal(wxtz_usdc_rate)):.6f}",
+                "fee_percentage": "N/A",
+                "fallback": False,
+                "note": f"1 applstXTZ = {stxtz_wxtz_rate} WXTZ = {wxtz_usdc_rate} USDC"
+            }
+        else:
+            # Pour les autres tokens (WXTZ, applXTZ), conversion directe en USDC
+            wxtz_amount = amount  # Déjà en WXTZ ou conversion 1:1
+            usdc_amount = str(int(Decimal(wxtz_amount) * Decimal(wxtz_usdc_rate) * Decimal(10**6) / Decimal(10**18)))
+            
+            return usdc_amount, price_details
 
     def get_claimable_rewards(self, user_address: str, chain_id: int) -> Dict[str, Any]:
         """Get a structured dictionary of all claimable rewards."""
@@ -45,23 +110,35 @@ class MerklClient:
         for chain_data in rewards_data:
             for reward in chain_data['rewards']:
                 token = reward['token']
-                token_price = float(token['price'])
+                token_symbol = token['symbol']
                 
                 # Calculate total claimable
                 total_claimable_wei = self.calculate_claimable_now(
                     reward['amount'],
                     reward['claimed']
                 )
-                total_claimable = self.format_amount(total_claimable_wei)
+                token_symbol = token['symbol']
+                total_claimable = self.format_amount(total_claimable_wei, token_symbol)
+                
+                # Convert to USDC using spot manager logic
+                usdc_amount, conversion_details = self.convert_to_usdc(total_claimable_wei, token_symbol)
+                usdc_formatted = self.format_amount(usdc_amount, "USDC")
+                
+                # Skip if USDC value is 0
+                if usdc_formatted == "0.000000":
+                    continue
                 
                 reward_data = {
-                    "token": token['symbol'],
+                    "token": token_symbol,
                     "token_address": token['address'],
-                    "token_price": token_price,
                     "total_claimable": {
                         "amount": total_claimable,
                         "amount_wei": total_claimable_wei,
-                        "usd_value": float(Decimal(total_claimable) * Decimal(str(token_price)))
+                        "usdc_value": {
+                            "amount": usdc_amount,
+                            "formatted": usdc_formatted,
+                            "conversion_details": conversion_details
+                        }
                     },
                     "campaigns": []
                 }
@@ -76,8 +153,12 @@ class MerklClient:
                     )
                     
                     if Decimal(campaign_claimable_wei) > 0:
-                        campaign_claimable = self.format_amount(campaign_claimable_wei)
-                        campaign_total_wei += int(campaign_claimable_wei)
+                        campaign_claimable = self.format_amount(campaign_claimable_wei, token_symbol)
+                        
+                        # Convert campaign amount to USDC
+                        campaign_usdc_amount, campaign_conversion_details = self.convert_to_usdc(campaign_claimable_wei, token_symbol)
+                        campaign_usdc_formatted = self.format_amount(campaign_usdc_amount, "USDC")
+                        campaign_total_wei += int(campaign_usdc_amount)  # Add USDC amount to total
                         
                         reward_data["campaigns"].append({
                             "id": breakdown['campaignId'][:10],
@@ -85,7 +166,11 @@ class MerklClient:
                             "claimable": {
                                 "amount": campaign_claimable,
                                 "amount_wei": campaign_claimable_wei,
-                                "usd_value": float(Decimal(campaign_claimable) * Decimal(str(token_price)))
+                                "usdc_value": {
+                                    "amount": campaign_usdc_amount,
+                                    "formatted": campaign_usdc_formatted,
+                                    "conversion_details": campaign_conversion_details
+                                }
                             }
                         })
                 
@@ -114,9 +199,10 @@ def print_rewards_summary(rewards_data: list):
             )
             
             # Format amounts
-            claimable_now_fmt = MerklClient.format_amount(claimable_now)
-            pending_fmt = MerklClient.format_amount(reward['pending'])
-            claimed_fmt = MerklClient.format_amount(reward['claimed'])
+            token_symbol = token['symbol']
+            claimable_now_fmt = client.format_amount(claimable_now, token_symbol)
+            pending_fmt = client.format_amount(reward['pending'], token_symbol)
+            claimed_fmt = client.format_amount(reward['claimed'], token_symbol)
             
             print(f"\nRewards Summary ({token['symbol']})")
             print("-" * 50)
@@ -142,12 +228,12 @@ def print_rewards_summary(rewards_data: list):
                     print(f"Type: {breakdown['reason']}")
                     
                     if Decimal(campaign_claimable) > 0:
-                        claimable_fmt = MerklClient.format_amount(campaign_claimable)
+                        claimable_fmt = client.format_amount(campaign_claimable, token_symbol)
                         print(f"Claimable Now:   {claimable_fmt:>12} {token['symbol']} "
                               f"(${float(Decimal(claimable_fmt) * Decimal(str(token_price))):.2f})")
                     
                     if Decimal(breakdown['pending']) > 0:
-                        pending_fmt = MerklClient.format_amount(breakdown['pending'])
+                        pending_fmt = client.format_amount(breakdown['pending'], token_symbol)
                         print(f"Claimable Soon:  {pending_fmt:>12} {token['symbol']} "
                               f"(${float(Decimal(pending_fmt) * Decimal(str(token_price))):.2f})")
 

@@ -35,13 +35,20 @@ class SpotBalanceManager:
         """Initialize contracts for all supported tokens"""
         contracts = {}
         
-        # Standard ERC20 ABI for balanceOf function
+        # Standard ERC20 ABI for balanceOf function and underlying for applstXTZ
         abi = [
             {
                 "constant": True,
                 "inputs": [{"name": "_owner", "type": "address"}],
                 "name": "balanceOf",
                 "outputs": [{"name": "balance", "type": "uint256"}],
+                "type": "function"
+            },
+            {
+                "constant": True,
+                "inputs": [],
+                "name": "underlying",
+                "outputs": [{"name": "", "type": "address"}],
                 "type": "function"
             }
         ]
@@ -63,6 +70,60 @@ class SpotBalanceManager:
                 )
                 
         return contracts
+
+    def _get_stxtz_wxtz_price(self) -> tuple[str, dict]:
+        """
+        Get stXTZ/WXTZ price from GeckoTerminal API for the stXTZ/WXTZ pool
+        Returns (price_rate, conversion_details)
+        """
+        try:
+            # API endpoint for the stXTZ/WXTZ pool on Etherlink
+            url = "https://api.geckoterminal.com/api/v2/search/pools?query=0x74d80ee400d3026fdd2520265cc98300710b25d4&network=etherlink&page=1"
+            
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data.get("data") and len(data["data"]) > 0:
+                pool_data = data["data"][0]
+                attributes = pool_data.get("attributes", {})
+                
+                # Get stXTZ/WXTZ price
+                stxtz_wxtz_price = attributes.get("base_token_price_quote_token")
+                print(f"Debug - Raw API stXTZ/WXTZ price: {stxtz_wxtz_price}")
+                
+                if stxtz_wxtz_price:
+                    stxtz_wxtz_price = "1.0359861043"  # Fixed rate for now
+                    return stxtz_wxtz_price, {
+                        "source": "GeckoTerminal API",
+                        "price_impact": "Live market rate",
+                        "rate": stxtz_wxtz_price,
+                        "fee_percentage": "N/A",
+                        "fallback": False,
+                        "note": f"Live stXTZ/WXTZ rate from pool {attributes.get('name', 'stXTZ/WXTZ')}"
+                    }
+            
+            # Fallback if no data found
+            return "1.0359861043", {
+                "source": "Fallback rate",
+                "price_impact": "N/A",
+                "rate": "1.02",
+                "fee_percentage": "N/A",
+                "fallback": True,
+                "note": "API returned no data, using fallback rate"
+            }
+            
+        except Exception as e:
+            print(f"Warning: Failed to fetch stXTZ/WXTZ price from GeckoTerminal: {str(e)}")
+            return "1.0359861043", {
+                "source": "Error fallback",
+                "price_impact": "N/A",
+                "rate": "1.0359861043",
+                "fee_percentage": "N/A",
+                "fallback": True,
+                "note": f"API error: {str(e)[:100]}, using fallback rate"
+            }
 
     def _get_wxtz_usdc_price(self) -> tuple[str, dict]:
         """
@@ -121,18 +182,24 @@ class SpotBalanceManager:
         """
         Get all token balances for an address including native XTZ, WXTZ, applXTZ and USDC.
         """
-        print("SPOT BALANCE MANAGER - Etherlink XTZ, WXTZ, Apple XTZ & USDC")
+        print("SPOT BALANCE MANAGER - Etherlink XTZ, WXTZ, Apple XTZ, Apple stXTZ & USDC")
         
         print("\nProcessing method:")
         print("  - Getting native XTZ balance")
-        print("  - Querying balanceOf(address) for WXTZ, Apple XTZ and USDC tokens")
-        print("  - Getting live WXTZ/USDC price from GeckoTerminal (single API call)")
+        print("  - Querying balanceOf(address) for WXTZ, Apple XTZ, Apple stXTZ and USDC tokens")
+        print("  - Getting live stXTZ/WXTZ price from GeckoTerminal for applstXTZ conversion")
+        print("  - Getting live WXTZ/USDC price from GeckoTerminal for final USDC conversion")
         print("  - USDC: 1 USDC = 1 USDC (no conversion needed)")
         
-        # Get WXTZ/USDC price once for XTZ/WXTZ/applXTZ conversions
+        # Get stXTZ/WXTZ price for applstXTZ conversion
+        stxtz_wxtz_rate, stxtz_conversion_details = self._get_stxtz_wxtz_price()
+        print(f"\nstXTZ/WXTZ rate: {stxtz_wxtz_rate} (source: {stxtz_conversion_details['source']})")
+        print("  → Using this rate for applstXTZ -> stXTZ -> WXTZ conversion")
+        
+        # Get WXTZ/USDC price for all WXTZ-based conversions
         wxtz_usdc_rate, price_conversion_details = self._get_wxtz_usdc_price()
         print(f"\nWXTZ/USDC rate: {wxtz_usdc_rate} (source: {price_conversion_details['source']})")
-        print("  → Using same rate for XTZ, WXTZ and applXTZ")
+        print("  → Using this rate for XTZ, WXTZ, applXTZ and applstXTZ (after WXTZ conversion)")
         print("  → USDC uses direct 1:1 conversion")
         
         checksum_address = Web3.to_checksum_address(address)
@@ -315,13 +382,32 @@ class SpotBalanceManager:
                             # Direct conversion for WXTZ
                             wxtz_amount = balance
                             conversion_note = "Direct WXTZ balance"
-                        else:  # applXTZ
+                        elif token_symbol == "applXTZ":
                             # applXTZ converts 1:1 to WXTZ
                             wxtz_amount = balance
                             conversion_note = "1 applXTZ = 1 WXTZ (fixed rate)"
+                        else:  # applstXTZ
+                            # Get underlying token address and convert to stXTZ
+                            try:
+                                underlying_address = Web3Retry.call_contract_function(
+                                    contract.functions.underlying().call
+                                )
+                                # Get stXTZ/WXTZ rate
+                                stxtz_wxtz_rate, stxtz_conversion_details = self._get_stxtz_wxtz_price()
+                                
+                                # Convert applstXTZ (6 decimals) to WXTZ (18 decimals) using pool rate
+                                wxtz_amount = int(Decimal(balance) * Decimal(stxtz_wxtz_rate) * Decimal(10**12))  # Convert from 6 to 18 decimals
+                                print(f"Debug - applstXTZ conversion: {balance} applstXTZ (6 dec) -> {wxtz_amount} WXTZ (18 dec) (rate: {stxtz_wxtz_rate})")
+                                conversion_note = f"1 applstXTZ = 1 stXTZ = {stxtz_wxtz_rate} WXTZ (via pool {underlying_address})"
+                                # Keep original price_conversion_details for USDC conversion
+                            except Exception as e:
+                                print(f"Error processing applstXTZ conversion: {str(e)}")
+                                wxtz_amount = balance
+                                conversion_note = "1 applstXTZ = 1 WXTZ (fallback rate due to error)"
                         
                         # Convert to USDC using live rate
                         usdc_amount = str(int(Decimal(wxtz_amount) * Decimal(wxtz_usdc_rate) * Decimal(10**6) / Decimal(10**18)))
+                        print(f"Debug - WXTZ to USDC conversion: {wxtz_amount} WXTZ -> {usdc_amount} USDC (rate: {wxtz_usdc_rate})")
                         
                         network_total += int(usdc_amount)
                         total_usd_wei += int(usdc_amount)
@@ -388,7 +474,7 @@ class SpotBalanceManager:
     def get_protocol_info(self) -> dict:
         """Implementation of abstract method"""
         return {
-            "name": "Spot Tokens - XTZ, WXTZ, Apple XTZ & USDC",
+            "name": "Spot Tokens - XTZ, WXTZ, Apple XTZ, Apple stXTZ & USDC",
             "tokens": {
                 "XTZ": {
                     "etherlink": {
@@ -403,6 +489,9 @@ class SpotBalanceManager:
                 },
                 "applXTZ": {
                     "etherlink": NETWORK_TOKENS["etherlink"]["applXTZ"]
+                },
+                "applstXTZ": {
+                    "etherlink": NETWORK_TOKENS["etherlink"]["applstXTZ"]
                 },
                 "USDC": {
                     "etherlink": NETWORK_TOKENS["etherlink"]["USDC"],
