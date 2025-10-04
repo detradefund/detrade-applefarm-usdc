@@ -1,12 +1,7 @@
 name: Push NAV for DeTrade AppleFarm USDC
 
 on:
-  push:
-    branches:
-      - main
-  schedule:
-    - cron: '0 0-5,13-23 * * *'  # Runs every hour except 6-12 UTC (8-14 Paris time)
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:  # Allows manual triggering only
 
 jobs:
   run-pusher:
